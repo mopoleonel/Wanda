@@ -51,7 +51,7 @@ android/app/google-services.json
 ios/Runner/GoogleService-Info.plist
 service-account.json
 
-# Copie locale de l'ancienne version (contient un .env) : déjà dans le premier commit.
-sauvegarde_avant_refonte/
+# Copies locales de sauvegarde du projet (contiennent un .env).
+sauvegarde_*/
 # Captures d'écran de revue design (régénérables, lourdes).
 .impeccable/review/
