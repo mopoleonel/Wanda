@@ -9,6 +9,12 @@
 # packages, and plugins designed to encourage good coding practices.
 include: package:flutter_lints/flutter.yaml
 
+# Copie complète de l'ancienne version (avant la refonte « bordereau »),
+# projet Flutter autonome : on ne l'analyse pas avec le projet principal.
+analyzer:
+  exclude:
+    - sauvegarde_avant_refonte/**
+
 linter:
   # The lint rules applied to this project can be customized in the
   # section below to disable rules from the `package:flutter_lints/flutter.yaml`

@@ -1,0 +1,72 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-08T17:00:00Z",
+  "title": "Design System: WANDA",
+  "extensions": {
+    "colorMeta": {
+      "letterhead": { "role": "primary", "displayName": "Vert en-tête" },
+      "brand-leaf": { "role": "primary", "displayName": "Feuille (logo)" },
+      "stamp-violet": { "role": "secondary", "displayName": "Encre de tampon" },
+      "paper": { "role": "neutral", "displayName": "Papier" },
+      "ink": { "role": "neutral", "displayName": "Encre" }
+    },
+    "typographyMeta": {
+      "stamp": { "displayName": "Tampon", "purpose": "Statuts en capitales condensées." },
+      "number": { "displayName": "Numéros", "purpose": "Numéros de fiche, distances, compteurs, prix." }
+    },
+    "shadows": [],
+    "motion": [
+      { "name": "stamp-drop", "value": "380ms easeOutExpo, scale 1.35→1 + fade", "purpose": "Changement de statut d'une fiche ; désactivé si les animations système le sont." },
+      { "name": "route-fade-through", "value": "320ms easeOutCubic, fade + 3% slide up", "purpose": "Transition entre écrans (go_router)." },
+      { "name": "tab-switch", "value": "220ms easeOutCubic crossfade", "purpose": "Changement d'onglet de NavigationBar." }
+    ],
+    "breakpoints": []
+  },
+  "components": [
+    {
+      "name": "Bouton principal",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Action principale d'un écran (FilledButton Material).",
+      "html": "<button class=\"ds-btn\">Solliciter Paul</button>",
+      "css": ".ds-btn{background:#0E5A3A;color:#fff;font:700 15px Archivo,sans-serif;height:54px;padding:0 20px;border:0;border-radius:12px;width:100%}"
+    },
+    {
+      "name": "Tampon de statut",
+      "kind": "custom",
+      "refersTo": "stamp",
+      "description": "État d'une fiche, double filet, incliné.",
+      "html": "<span class=\"ds-stamp\"><span>REÇU</span></span>",
+      "css": ".ds-stamp{display:inline-block;padding:2px;border:2px solid #5B3CC4;border-radius:6px;transform:rotate(-4deg)}.ds-stamp span{display:block;padding:4px 7px;border:1px solid #5B3CC4b3;border-radius:3px;background:#5B3CC40f;color:#5B3CC4;font:700 13px 'Barlow Condensed',sans-serif;letter-spacing:1.6px}"
+    },
+    {
+      "name": "Fiche",
+      "kind": "card",
+      "refersTo": "fiche-card",
+      "description": "Conteneur standard : blanc, filet d'un pixel, coins 14.",
+      "html": "<div class=\"ds-fiche\"><b>N° 125FC3</b> · 29/09 17:36</div>",
+      "css": ".ds-fiche{background:#fff;border:1px solid #14201A29;border-radius:14px;padding:16px;font:500 13px Archivo,sans-serif;color:#66766D}.ds-fiche b{font:600 14px 'Barlow Condensed',sans-serif;color:#14201A}"
+    },
+    {
+      "name": "Champ",
+      "kind": "input",
+      "refersTo": "input-field",
+      "description": "TextField Material à contour.",
+      "html": "<input class=\"ds-input\" placeholder=\"Numéro WhatsApp\">",
+      "css": ".ds-input{background:#fff;border:1px solid #14201A4D;border-radius:12px;padding:16px;font:400 15px Archivo,sans-serif;color:#14201A}.ds-input:focus{outline:none;border:2px solid #0E5A3A}"
+    }
+  ],
+  "narrative": {
+    "northStar": "Le bordereau tamponné",
+    "overview": "Chaque demande est une fiche numérotée que la ville tamponne à chaque étape. Monde clair et contrasté pour un usage extérieur, en-tête vert officiel au bord perforé, filets plutôt qu'ombres, Material 3 pour la structure.",
+    "keyCharacteristics": ["Papier clair", "En-tête vert perforé", "Tampons de statut", "Numéros de fiche", "Code couleur par métier"],
+    "rules": [
+      { "name": "Copie carbone par métier", "body": "Une paire teinte/encre fixe par métier, partout.", "section": "colors" },
+      { "name": "L'encre parle d'état", "body": "Violet, ambre, vert done et rouge seulement pour un statut réel.", "section": "colors" },
+      { "name": "Les chiffres sont en condensé", "body": "Barlow Condensed tabulaire, format français.", "section": "typography" },
+      { "name": "Filet, pas ombre", "body": "Profondeur par contraste et filets d'un pixel.", "section": "elevation" }
+    ],
+    "dos": ["Numéroter et tamponner tout ce qui a un statut", "Garder le code couleur métier partout", "Rester clair et contrasté"],
+    "donts": ["Pas de néon sombre ni de verre dépoli", "Pas d'étiquette qui répète le titre", "Pas de tampon décoratif"]
+  }
+}
