@@ -48,8 +48,7 @@ class SollicitationRepository {
             try {
               final expertData = await _client
                   .from('particuliers')
-                  .select(
-                      'nom, prenom, telephone, service_propose, photo_pro_url')
+                  .select('nom, prenom, telephone, services, photo_pro_url')
                   .eq('id', row['prestataire_id'])
                   .single();
               map['expert'] = expertData;

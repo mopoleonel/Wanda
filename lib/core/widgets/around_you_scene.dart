@@ -6,7 +6,7 @@ import '../theme/app_theme.dart';
 import 'bordereau.dart';
 
 /// Scène décorative « autour de vous » : vous au centre (ondes), les quatre
-/// métiers qui flottent autour, chacun dans sa couleur carbone.
+/// services qui flottent autour, chacun dans sa couleur carbone.
 class AroundYouScene extends StatefulWidget {
   const AroundYouScene({super.key});
 
@@ -35,7 +35,7 @@ class AroundYouSceneSceneState extends State<AroundYouScene>
 
   @override
   Widget build(BuildContext context) {
-    final trades = TradeStyle.names.where((n) => n != 'Tous').toList();
+    final trades = ServiceStyle.codes.skip(1).toList();
     return ExcludeSemantics(
       child: LayoutBuilder(builder: (context, c) {
         final side = math.min(c.maxWidth, c.maxHeight);
@@ -62,7 +62,7 @@ class AroundYouSceneSceneState extends State<AroundYouScene>
                       color: AppColors.letterheadDeep, size: bubble * 0.6),
                 ),
                 for (var i = 0; i < trades.length; i++)
-                  _bubble(TradeStyle.of(trades[i]), i, trades.length, orbit,
+                  _bubble(ServiceStyle.of(trades[i]), i, trades.length, orbit,
                       bubble),
               ]),
             );
@@ -72,7 +72,7 @@ class AroundYouSceneSceneState extends State<AroundYouScene>
     );
   }
 
-  Widget _bubble(TradeStyle t, int i, int n, double orbit, double size) {
+  Widget _bubble(ServiceStyle t, int i, int n, double orbit, double size) {
     // Positions fixes en losange, chacune flotte doucement à son rythme.
     final angle = -math.pi / 2 + i * 2 * math.pi / n + math.pi / n;
     final phase = _t.value * 2 * math.pi + i * 1.7;

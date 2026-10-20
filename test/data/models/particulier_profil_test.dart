@@ -4,14 +4,14 @@ import 'package:wanda/data/models/particulier.dart';
 Particulier _p(
         {String nom = 'Kamga',
         String prenom = 'Paul',
-        String metier = 'Plombier',
+        List<String> services = const ['menage'],
         String? photo = 'https://x/p.jpg'}) =>
     Particulier(
         id: '1',
         nom: nom,
         prenom: prenom,
         telephone: '+237699000000',
-        servicePropose: metier,
+        services: services,
         photoProUrl: photo);
 
 void main() {
@@ -28,17 +28,18 @@ void main() {
   });
 
   test('champs vides ou blancs comptés comme manquants', () {
-    final p = _p(nom: ' ', prenom: '', metier: '', photo: null);
-    expect(
-        p.profilManquant, ['photo professionnelle', 'nom', 'prénom', 'métier']);
+    final p = _p(nom: ' ', prenom: '', services: const [], photo: null);
+    expect(p.profilManquant,
+        ['photo professionnelle', 'nom', 'prénom', 'services proposés']);
     expect(Particulier.profilElements, 4);
   });
 
-  test('visible des citoyens : nom, prénom et métier suffisent', () {
+  test('visible des citoyens : nom, prénom et un service suffisent', () {
     expect(_p(photo: null).infosVisibiliteManquantes, isEmpty);
     // Inscrit avec son seul numéro.
-    expect(_p(nom: '', prenom: '', metier: '').infosVisibiliteManquantes,
-        ['nom', 'prénom', 'métier']);
+    expect(
+        _p(nom: '', prenom: '', services: const []).infosVisibiliteManquantes,
+        ['nom', 'prénom', 'services proposés']);
   });
 
   test('jours restants arrondis au jour supérieur', () {
@@ -48,7 +49,7 @@ void main() {
         nom: 'a',
         prenom: 'b',
         telephone: '',
-        servicePropose: 'Plombier',
+        services: const ['menage'],
         abonnementExpireAt: end);
     expect(
         withEnd(now.add(const Duration(days: 14, seconds: -5)))
@@ -66,7 +67,7 @@ void main() {
         nom: 'Kamga',
         prenom: 'Paul',
         telephone: '+237699000000',
-        servicePropose: 'Plombier',
+        services: const ['menage'],
         identiteVerifiee: v);
 
     test("libre tant que rien n'est envoyé", () {
@@ -81,10 +82,26 @@ void main() {
       expect(certifie(true).identiteFigee(), isTrue);
     });
 
-    test('nom, prénom, métier et téléphone ; pas la photo', () {
-      expect(Particulier.champsFiges,
-          ['nom', 'prénom', 'métier', 'téléphone']);
+    test('nom, prénom et téléphone ; pas la photo ni les services', () {
+      expect(Particulier.champsFiges, ['nom', 'prénom', 'téléphone']);
       expect(Particulier.champsFiges, isNot(contains('photo professionnelle')));
+    });
+
+    test('compte libre : services modifiables dans tous les sens', () {
+      final p = certifie(false);
+      expect(p.servicesModifiables(const ['linge']), isTrue);
+      expect(p.servicesModifiables(const []), isTrue);
+    });
+
+    test('compte figé : on peut ajouter un service, pas en retirer', () {
+      final p = certifie(true);
+      expect(p.servicesModifiables(const ['menage', 'linge']), isTrue);
+      expect(p.servicesModifiables(const ['menage']), isTrue);
+      expect(p.servicesModifiables(const ['linge']), isFalse);
+      expect(
+          certifie(false)
+              .servicesModifiables(const ['linge'], verificationEnCours: true),
+          isFalse);
     });
   });
 }

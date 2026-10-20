@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:wanda/core/theme/app_theme.dart';
 import 'package:wanda/core/widgets/bordereau.dart';
+import 'package:wanda/data/models/categorie_service.dart';
 import 'package:wanda/data/models/avis_prestataire.dart';
 
 Widget _wrap(Widget child, {bool disableAnimations = false}) => MaterialApp(
@@ -54,7 +55,8 @@ void main() {
   group('FicheStatus', () {
     test('sollicitation : chaque statut a son tampon et son encre', () {
       expect(FicheStatus.sollicitation('en_attente').label, 'REÇU');
-      expect(FicheStatus.sollicitation('en_attente').ink, AppColors.stampViolet);
+      expect(
+          FicheStatus.sollicitation('en_attente').ink, AppColors.stampViolet);
       expect(FicheStatus.sollicitation('accepte').label, 'EN ROUTE');
       expect(FicheStatus.sollicitation('accepte').ink, AppColors.progress);
       expect(FicheStatus.sollicitation('termine').label, 'TERMINÉ');
@@ -71,36 +73,49 @@ void main() {
     });
   });
 
-  group('TradeStyle', () {
-    test('métier connu : sa copie carbone fixe', () {
-      final s = TradeStyle.of('Plombier');
-      expect(s.label, 'Plombier');
+  group('ServiceStyle', () {
+    test('service connu : sa copie carbone fixe', () {
+      final s = ServiceStyle.of('menage');
+      expect(s.label, 'Ménage');
+      expect(s.libelle, 'Ménage et nettoyage');
+      expect(s.icon, Icons.cleaning_services_rounded);
       expect(s.tint, const Color(0xFFD8E7F8));
     });
 
-    test('vide ou « Tous » : style générique', () {
-      expect(TradeStyle.of(null), same(TradeStyle.all));
-      expect(TradeStyle.of(''), same(TradeStyle.all));
-      expect(TradeStyle.of('Tous'), same(TradeStyle.all));
+    test('chaque catégorie a sa propre copie carbone', () {
+      final styles = CategorieService.values.map(ServiceStyle.ofCategorie);
+      expect(styles.map((s) => s.tint).toSet(), hasLength(4));
+      expect(styles.map((s) => s.icon).toSet(), hasLength(4));
     });
 
-    test('métier inconnu : libellé conservé, couleurs neutres', () {
-      final s = TradeStyle.of('Menuisier');
-      expect(s.label, 'Menuisier');
+    test('services d\'un prestataire : style de la première catégorie', () {
+      expect(ServiceStyle.ofServices(['linge', 'menage']).label, 'Linge');
+      expect(ServiceStyle.ofServices(const []), same(ServiceStyle.tous));
+    });
+
+    test('vide ou « Tous » : style générique', () {
+      expect(ServiceStyle.of(null), same(ServiceStyle.tous));
+      expect(ServiceStyle.of(''), same(ServiceStyle.tous));
+      expect(ServiceStyle.of('tous'), same(ServiceStyle.tous));
+    });
+
+    test('ancien métier ou code inconnu : couleurs neutres', () {
+      final s = ServiceStyle.of('Plombier');
+      expect(s.label, 'Plombier');
       expect(s.tint, AppColors.surfaceSunk);
     });
 
     test('la liste des onglets commence par « Tous »', () {
-      expect(TradeStyle.names.first, 'Tous');
-      expect(TradeStyle.names, contains('Froid & Clim'));
+      expect(ServiceStyle.codes,
+          ['tous', 'menage', 'linge', 'dechets', 'nuisibles']);
     });
   });
 
   testWidgets('StatusStamp annonce le statut aux lecteurs d’écran',
       (tester) async {
     final handle = tester.ensureSemantics();
-    await tester.pumpWidget(
-        _wrap(StatusStamp(FicheStatus.sollicitation('accepte'))));
+    await tester
+        .pumpWidget(_wrap(StatusStamp(FicheStatus.sollicitation('accepte'))));
     await tester.pumpAndSettle();
 
     expect(find.text('EN ROUTE'), findsOneWidget);
@@ -123,25 +138,25 @@ void main() {
     await tester.pumpWidget(
         _wrap(StatusStamp(FicheStatus.sollicitation('en_attente'))));
     await tester.pumpAndSettle();
-    await tester.pumpWidget(
-        _wrap(StatusStamp(FicheStatus.sollicitation('termine'))));
+    await tester
+        .pumpWidget(_wrap(StatusStamp(FicheStatus.sollicitation('termine'))));
     await tester.pumpAndSettle();
 
     expect(find.text('REÇU'), findsNothing);
     expect(find.text('TERMINÉ'), findsOneWidget);
   });
 
-  testWidgets('TradeTag affiche le libellé de repli sans métier',
+  testWidgets('ServiceTag affiche le libellé de repli sans service',
       (tester) async {
     await tester.pumpWidget(_wrap(const Column(children: [
-      TradeTag(null),
-      TradeTag('', emptyLabel: 'Artisan'),
-      TradeTag('Maçon'),
+      ServiceTag(null),
+      ServiceTag('', emptyLabel: 'Services à choisir'),
+      ServiceTag('nuisibles'),
     ])));
 
-    expect(find.text('Expert'), findsOneWidget);
-    expect(find.text('Artisan'), findsOneWidget);
-    expect(find.text('Maçon'), findsOneWidget);
+    expect(find.text('Prestataire'), findsOneWidget);
+    expect(find.text('Services à choisir'), findsOneWidget);
+    expect(find.text('Nuisibles'), findsOneWidget);
   });
 
   testWidgets('RatingInline : « Nouveau » sans avis, note française sinon',

@@ -20,8 +20,8 @@ void main() {
     });
 
     test('« eau » ne reconnaît pas « réseau » ni « bateau »', () {
-      expect(secteurPourType('Réseau électrique endommagé'),
-          secteurElectricite);
+      expect(
+          secteurPourType('Réseau électrique endommagé'), secteurElectricite);
       expect(secteurPourType('Bateau échoué'), secteurSecurite);
     });
 

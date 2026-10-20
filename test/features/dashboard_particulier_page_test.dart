@@ -26,6 +26,7 @@ class _FakeProfiles extends Fake implements ProfileRepository {
   _FakeProfiles(this.particulier);
   Particulier particulier;
   int updates = 0;
+  List<String>? savedServices;
 
   @override
   Future<Particulier?> fetchParticulier(String id) async => particulier;
@@ -36,9 +37,11 @@ class _FakeProfiles extends Fake implements ProfileRepository {
     required String nom,
     required String telephone,
     String? prenom,
-    String? servicePropose,
-  }) async =>
-      updates++;
+    List<String>? services,
+  }) async {
+    updates++;
+    savedServices = services;
+  }
 }
 
 class _FakeAvis extends Fake implements AvisRepository {
@@ -67,7 +70,7 @@ class _FakePrestataires extends Fake implements PrestataireRepository {}
 Particulier _artisan({
   String nom = 'Kamga',
   String prenom = 'Paul',
-  String metier = 'Plombier',
+  List<String> services = const ['menage'],
   String? photo = 'https://x/p.jpg',
   bool certifie = false,
 }) =>
@@ -76,7 +79,7 @@ Particulier _artisan({
       nom: nom,
       prenom: prenom,
       telephone: '+237699000001',
-      servicePropose: metier,
+      services: services,
       photoProUrl: photo,
       identiteVerifiee: certifie,
       abonnementExpireAt: DateTime.now().add(const Duration(days: 10)),
@@ -137,7 +140,7 @@ void main() {
       (tester) async {
     tallScreen(tester);
     await tester.pumpWidget(
-        _app(_FakeProfiles(_artisan(nom: '', metier: '', photo: null))));
+        _app(_FakeProfiles(_artisan(nom: '', services: const [], photo: null))));
     await _settle(tester);
 
     expect(find.text('Complétez votre profil, puis certifiez votre compte'),
@@ -145,7 +148,7 @@ void main() {
     await tester.tap(find.text('Compléter mon profil'));
     await _settle(tester);
 
-    expect(find.text('Ma fiche artisan'), findsOneWidget);
+    expect(find.text('Ma fiche prestataire'), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
   });
 
@@ -185,8 +188,9 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('Compte certifié : pas de rappel, identité et métier figés',
-      (tester) async {
+  testWidgets(
+      'Compte certifié : pas de rappel, identité figée, services '
+      'complétables seulement', (tester) async {
     tallScreen(tester);
     final profiles = _FakeProfiles(_artisan(certifie: true));
     await tester.pumpWidget(_app(profiles));
@@ -195,21 +199,28 @@ void main() {
     expect(find.text('Faites certifier votre compte'), findsNothing);
 
     await _openProfile(tester);
-    expect(find.textContaining('Compte certifié'), findsOneWidget);
+    expect(find.textContaining('Compte certifié : nom, prénom'), findsOneWidget);
 
     final fields = tester.widgetList<TextField>(find.byType(TextField)).where(
         (f) => const ['Nom', 'Prénom'].contains(f.decoration?.labelText));
     expect(fields, hasLength(2));
     expect(fields.every((f) => f.readOnly && f.enabled == false), isTrue);
 
-    // Seul le métier certifié est affiché, les autres ne sont pas proposés.
-    expect(find.text('Plombier'), findsWidgets);
-    expect(find.text('Électricien'), findsNothing);
-    expect(find.byIcon(Icons.lock_outline_rounded), findsWidgets);
+    // Le service certifié reste coché (cadenas) et ne peut pas être retiré.
+    await tester.tap(find.text('Ménage').last);
+    await tester.pump();
+    expect(
+        find.text('Compte certifié : vous pouvez ajouter des services, '
+            'pas en retirer.'),
+        findsOneWidget);
 
-    // Plus rien à enregistrer.
-    expect(find.text('Enregistrer'), findsNothing);
-    expect(profiles.updates, 0);
+    // Un nouveau service peut être ajouté et enregistré.
+    await tester.tap(find.text('Linge'));
+    await tester.pump();
+    await tester.tap(find.text('Enregistrer'));
+    await _settle(tester);
+    expect(profiles.updates, 1);
+    expect(profiles.savedServices, ['menage', 'linge']);
     await tester.pumpWidget(const SizedBox());
   });
 
@@ -222,8 +233,10 @@ void main() {
 
     expect(find.text('Faites certifier votre compte'), findsNothing);
     await _openProfile(tester);
-    expect(find.text('Enregistrer'), findsNothing);
-    expect(find.text('Électricien'), findsNothing);
+    final nom = tester
+        .widgetList<TextField>(find.byType(TextField))
+        .firstWhere((f) => f.decoration?.labelText == 'Nom');
+    expect(nom.enabled, isFalse);
     await tester.pumpWidget(const SizedBox());
   });
 
@@ -237,11 +250,13 @@ void main() {
     await _settle(tester);
 
     await _openProfile(tester);
-    expect(find.text('Électricien'), findsOneWidget);
-    await tester.tap(find.text('Électricien'));
+    // Plusieurs services : on coche Nuisibles, on décoche Ménage.
+    await tester.tap(find.text('Nuisibles'));
+    await tester.tap(find.text('Ménage').last);
     await tester.tap(find.text('Enregistrer'));
     await _settle(tester);
     expect(profiles.updates, 1);
+    expect(profiles.savedServices, ['nuisibles']);
     await tester.pumpWidget(const SizedBox());
   });
 }

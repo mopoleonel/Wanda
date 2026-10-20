@@ -34,8 +34,8 @@ import '../../data/models/sollicitation.dart';
 import 'prestataire_marker_factory.dart';
 
 class ServicePage extends ConsumerStatefulWidget {
-  /// Métier présélectionné (ex. « Plombier ») quand on arrive depuis une
-  /// tuile métier de l'espace citoyen.
+  /// Service présélectionné (code, ex. `menage`) quand on arrive depuis une
+  /// tuile de service.
   final String? initialCategory;
 
   const ServicePage({super.key, this.initialCategory});
@@ -46,7 +46,7 @@ class ServicePage extends ConsumerStatefulWidget {
 class _ServicePageState extends ConsumerState<ServicePage> {
   int _selectedIndex = 0;
 
-  String selectedCategory = "Tous";
+  String selectedCategory = ServiceStyle.tousCode;
   final TextEditingController _nomController = TextEditingController();
   final TextEditingController _prenomController = TextEditingController();
   final TextEditingController _phoneController = TextEditingController();
@@ -64,7 +64,7 @@ class _ServicePageState extends ConsumerState<ServicePage> {
   final PageController _carousel = PageController(viewportFraction: 0.88);
   bool _locationOff = false;
 
-  final List<String> categories = TradeStyle.names;
+  final List<String> categories = ServiceStyle.codes;
   Timer? _clock;
 
   // Flux temps réel : un seul abonnement par écran (et non un par
@@ -232,12 +232,12 @@ class _ServicePageState extends ConsumerState<ServicePage> {
     );
   }
 
-  /// Experts du métier choisi, du plus proche au plus éloigné.
+  /// Prestataires du service choisi, du plus proche au plus éloigné.
   List<Particulier> get _visibleProviders =>
-      _sortByDistance(selectedCategory == 'Tous'
+      _sortByDistance(selectedCategory == ServiceStyle.tousCode
           ? _allProviders
           : _allProviders
-              .where((p) => p.servicePropose == selectedCategory)
+              .where((p) => p.services.contains(selectedCategory))
               .toList());
 
   Future<void> _refreshRatingsFor(List<Particulier> providers) async {
@@ -270,7 +270,7 @@ class _ServicePageState extends ConsumerState<ServicePage> {
     final withLocation = _withLocation(providers);
     final signature = withLocation
         .map((p) =>
-            '${p.id}:${p.photoProUrl}:${p.isAvailable}:${p.servicePropose}')
+            '${p.id}:${p.photoProUrl}:${p.isAvailable}:${p.services.join(',')}')
         .join('|');
     if (signature == _markersSignature) return;
     _markersSignature = signature;
@@ -280,7 +280,7 @@ class _ServicePageState extends ConsumerState<ServicePage> {
       final icon = await PrestataireMarkerFactory.build(
         id: p.id,
         photoUrl: p.photoProUrl,
-        trade: p.servicePropose,
+        service: p.services.isEmpty ? null : p.services.first,
         isOnline: p.isAvailable,
       );
       markers.add(Marker(
@@ -473,7 +473,7 @@ class _ServicePageState extends ConsumerState<ServicePage> {
           order.dateFin != null) {
         return "Terminée à ${DateFormat('HH:mm').format(order.dateFin!.toLocal())}";
       }
-      if (order.statut == 'accepte') return "L'expert est en route…";
+      if (order.statut == 'accepte') return 'Prestataire confirmé';
       if (order.statut == 'annule') return 'Demande annulée';
       if (order.dateSollicitation == null) return 'Envoyée';
       return 'Envoyée ${sinceLabel(order.dateSollicitation!)}';
@@ -489,7 +489,7 @@ class _ServicePageState extends ConsumerState<ServicePage> {
 
   Future<void> _call(String? t) async {
     if (t == null || t.isEmpty) {
-      _showErrorSnackBar("Numéro de l'expert non disponible");
+      _showErrorSnackBar('Numéro du prestataire non disponible');
       return;
     }
     try {
@@ -573,7 +573,7 @@ class _ServicePageState extends ConsumerState<ServicePage> {
             NavigationDestination(
               icon: Icon(Icons.handyman_outlined),
               selectedIcon: Icon(Icons.handyman_rounded),
-              label: 'Experts',
+              label: 'Services',
             ),
             NavigationDestination(
               icon: Icon(Icons.receipt_long_outlined),
@@ -664,10 +664,9 @@ class _ServicePageState extends ConsumerState<ServicePage> {
               child: Row(children: [
                 Expanded(
                   child: Text(
-                    selectedCategory == 'Tous'
-                        ? 'Experts disponibles'
-                        : '${selectedCategory}s disponibles'
-                            .replaceAll('Froid & Clims', 'Froid & Clim'),
+                    selectedCategory == ServiceStyle.tousCode
+                        ? 'Prestataires disponibles'
+                        : '${ServiceStyle.of(selectedCategory).label} · prestataires disponibles',
                     style: AppText.sectionTitle,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -681,7 +680,7 @@ class _ServicePageState extends ConsumerState<ServicePage> {
           if (hasError)
             SliverToBoxAdapter(
               child: ErrorStateView(
-                message: 'Impossible de charger les experts.',
+                message: 'Impossible de charger les prestataires.',
                 onRetry: _listenProviders,
               ),
             )
@@ -691,17 +690,17 @@ class _ServicePageState extends ConsumerState<ServicePage> {
             SliverToBoxAdapter(
               child: EmptyStateView(
                 icon: Icons.person_search_rounded,
-                title: selectedCategory == 'Tous'
-                    ? 'Aucun expert en ligne'
-                    : 'Aucun ${selectedCategory.toLowerCase()} en ligne',
+                title: selectedCategory == ServiceStyle.tousCode
+                    ? 'Aucun prestataire en ligne'
+                    : 'Personne en ligne pour ce service',
                 subtitle:
-                    'Les experts se connectent tout au long de la journée.',
-                action: selectedCategory == 'Tous'
+                    'Les prestataires se connectent tout au long de la journée.',
+                action: selectedCategory == ServiceStyle.tousCode
                     ? null
                     : OutlinedButton(
-                        onPressed: () =>
-                            setState(() => selectedCategory = 'Tous'),
-                        child: const Text('Voir tous les métiers'),
+                        onPressed: () => setState(
+                            () => selectedCategory = ServiceStyle.tousCode),
+                        child: const Text('Voir tous les services'),
                       ),
               ),
             )
@@ -757,10 +756,10 @@ class _ServicePageState extends ConsumerState<ServicePage> {
         Expanded(
           child: Text(
             isLoading
-                ? 'Recherche des experts en ligne…'
+                ? 'Recherche des prestataires en ligne…'
                 : onlineCount > 0
-                    ? '$onlineCount expert${onlineCount > 1 ? 's' : ''} disponible${onlineCount > 1 ? 's' : ''} maintenant'
-                    : 'Aucun expert en ligne pour le moment',
+                    ? '$onlineCount prestataire${onlineCount > 1 ? 's' : ''} disponible${onlineCount > 1 ? 's' : ''} maintenant'
+                    : 'Aucun prestataire en ligne pour le moment',
             style: AppText.label.copyWith(color: AppColors.onLetterheadSoft),
           ),
         ),
@@ -790,7 +789,7 @@ class _ServicePageState extends ConsumerState<ServicePage> {
           const SizedBox(width: AppSpace.md),
           Expanded(
             child: Text(
-                'Activez la localisation pour voir les experts les plus proches',
+                'Activez la localisation pour voir les prestataires les plus proches',
                 style: AppText.caption.copyWith(color: AppColors.ink)),
           ),
           Text('Activer',
@@ -800,7 +799,7 @@ class _ServicePageState extends ConsumerState<ServicePage> {
     );
   }
 
-  /// Accès direct au signalement d'incident, juste sous les métiers :
+  /// Accès direct au signalement d'incident, juste sous les services :
   /// visible dès l'arrivée, sans passer devant la recherche d'artisan.
   Widget _buildReportEntry() {
     return Padding(
@@ -842,7 +841,7 @@ class _ServicePageState extends ConsumerState<ServicePage> {
     );
   }
 
-  /// Onglets métier : une copie carbone colorée par métier.
+  /// Onglets de service : une copie carbone colorée par service.
   Widget _buildTradeTabs() {
     return SizedBox(
       height: 56,
@@ -855,7 +854,7 @@ class _ServicePageState extends ConsumerState<ServicePage> {
         itemBuilder: (context, index) {
           final cat = categories[index];
           return _TradeTab(
-            style: TradeStyle.of(cat),
+            style: ServiceStyle.of(cat),
             selected: selectedCategory == cat,
             onTap: () => setState(() => selectedCategory = cat),
           );
@@ -908,9 +907,10 @@ class _ServicePageState extends ConsumerState<ServicePage> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text('Experts autour de vous', style: AppText.cardTitle),
+                    Text('Prestataires autour de vous',
+                        style: AppText.cardTitle),
                     Text(
-                      '${all.length} en ligne · ${TradeStyle.of(selectedCategory).label}',
+                      '${all.length} en ligne · ${ServiceStyle.of(selectedCategory).label}',
                       style: AppText.caption,
                     ),
                   ],
@@ -1021,10 +1021,10 @@ class _ServicePageState extends ConsumerState<ServicePage> {
                 icon: Icons.receipt_long_rounded,
                 title: 'Aucune demande pour le moment',
                 subtitle:
-                    'Sollicitez un expert : sa fiche apparaîtra ici avec son numéro.',
+                    'Réservez un service : votre demande apparaîtra ici avec son numéro.',
                 action: FilledButton(
                   onPressed: () => setState(() => _selectedIndex = 0),
-                  child: const Text('Trouver un expert'),
+                  child: const Text('Réserver un service'),
                 ),
               ),
             )
@@ -1066,13 +1066,13 @@ class _ServicePageState extends ConsumerState<ServicePage> {
       context: context,
       builder: (dialogContext) => StatefulBuilder(
         builder: (dialogContext, setD) => AlertDialog(
-          title: const Text("Noter l'expert"),
+          title: const Text('Noter le prestataire'),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                '${o.expert?.prenom ?? ''} ${o.expert?.nom ?? 'Expert'} · ${ficheNumber(o.id)}'
+                '${o.expert?.prenom ?? ''} ${o.expert?.nom ?? 'Prestataire'} · ${ficheNumber(o.id)}'
                     .trim(),
                 style: AppText.caption,
               ),
@@ -1150,7 +1150,7 @@ class _ServicePageState extends ConsumerState<ServicePage> {
             color: AppColors.progress, size: 32),
         title: const Text('Annulation possible plus tard'),
         content: Text(
-          "L'expert a peut-être déjà pris la route. Vous pourrez annuler librement dans $restant min.",
+          "Le prestataire s'est peut-être déjà organisé. Vous pourrez annuler librement dans $restant min.",
         ),
         actions: [
           FilledButton(
@@ -1170,7 +1170,7 @@ class _ServicePageState extends ConsumerState<ServicePage> {
             color: AppColors.danger, size: 32),
         title: Text('Annuler la demande ${ficheNumber(order.id)} ?'),
         content: const Text(
-            "L'expert sera prévenu. Cette action ne peut pas être annulée."),
+            'Le prestataire sera prévenu. Cette action ne peut pas être annulée.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext),
@@ -1198,7 +1198,7 @@ class _ServicePageState extends ConsumerState<ServicePage> {
   void _showDetails(Particulier p) {
     final rating = _ratingFor(p.id);
     final distance = _formatDistance(p);
-    final trade = TradeStyle.of(p.servicePropose);
+    final trade = ServiceStyle.ofServices(p.services);
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -1220,7 +1220,7 @@ class _ServicePageState extends ConsumerState<ServicePage> {
                       Text('${p.prenom} ${p.nom}'.trim(),
                           style: AppText.heading.copyWith(fontSize: 22)),
                       const SizedBox(height: AppSpace.sm),
-                      TradeTag(p.servicePropose),
+                      ServiceTags(p.services),
                       const SizedBox(height: AppSpace.sm),
                       RatingInline(rating),
                     ],
@@ -1246,7 +1246,7 @@ class _ServicePageState extends ConsumerState<ServicePage> {
                     minimumSize: const Size(double.infinity, 56)),
                 icon: const Icon(Icons.send_rounded, size: 20),
                 label: Text(
-                    'Solliciter ${p.prenom.isNotEmpty ? p.prenom : 'cet expert'}'),
+                    'Solliciter ${p.prenom.isNotEmpty ? p.prenom : 'ce prestataire'}'),
               ),
             ],
           ),
@@ -1283,8 +1283,8 @@ class _ServicePageState extends ConsumerState<ServicePage> {
         Letterhead(
           title: incomplete ? 'Complétez votre fiche' : 'Ma fiche citoyen',
           subtitle: incomplete
-              ? 'Ajoutez votre nom pour pouvoir solliciter un expert.'
-              : 'Ces informations sont transmises aux experts que vous sollicitez.',
+              ? 'Ajoutez votre nom pour pouvoir réserver un service.'
+              : 'Ces informations sont transmises aux prestataires que vous réservez.',
         ),
         Padding(
           padding: const EdgeInsets.fromLTRB(
@@ -1452,13 +1452,13 @@ class _ServicePageState extends ConsumerState<ServicePage> {
         Letterhead(
           title: 'Assistant WANDA',
           subtitle:
-              "Bientôt : décrivez un problème, l'assistant vous orientera vers le bon expert ou le bon service.",
+              "Bientôt : décrivez votre besoin, l'assistant vous orientera vers le bon service.",
         ),
         EmptyStateView(
           icon: Icons.auto_awesome_rounded,
           title: "L'assistant arrive",
           subtitle:
-              'En attendant, utilisez les onglets Experts et Mes demandes.',
+              'En attendant, utilisez les onglets Services et Mes demandes.',
         ),
       ],
     );
@@ -1470,7 +1470,7 @@ class _ServicePageState extends ConsumerState<ServicePage> {
 // =============================================================================
 
 class _TradeTab extends StatelessWidget {
-  final TradeStyle style;
+  final ServiceStyle style;
   final bool selected;
   final VoidCallback onTap;
 
@@ -1515,7 +1515,7 @@ class _TradeTab extends StatelessWidget {
   }
 }
 
-/// Fiche expert dans la liste : photo d'identité, nom, métier, note, et la
+/// Fiche prestataire dans la liste : photo d'identité, nom, services, note, et la
 /// distance en gros chiffres (l'information qui fait choisir).
 class _ExpertRow extends StatelessWidget {
   final Particulier data;
@@ -1532,7 +1532,7 @@ class _ExpertRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final trade = TradeStyle.of(data.servicePropose);
+    final trade = ServiceStyle.ofServices(data.services);
     return Semantics(
       button: true,
       label: 'Voir la fiche de ${data.prenom} ${data.nom}',
@@ -1565,10 +1565,7 @@ class _ExpertRow extends StatelessWidget {
                   spacing: AppSpace.sm,
                   runSpacing: 4,
                   crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    TradeTag(data.servicePropose),
-                    RatingInline(rating)
-                  ],
+                  children: [ServiceTags(data.services), RatingInline(rating)],
                 ),
               ],
             ),
@@ -1604,7 +1601,7 @@ class _TopRatedFiche extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final trade = TradeStyle.of(data.servicePropose);
+    final trade = ServiceStyle.ofServices(data.services);
     return SizedBox(
       width: 156,
       child: FicheCard(
@@ -1672,7 +1669,7 @@ class _OrderFiche extends StatelessWidget {
     final isDone = status == 'termine';
     final isFinal = status == 'archive' || status == 'annule';
     final date = order.dateSollicitation;
-    final trade = TradeStyle.of(expert?.servicePropose);
+    final trade = ServiceStyle.ofServices(expert?.services ?? const []);
 
     return FicheCard(
       color: isFinal ? AppColors.paper : null,
@@ -1701,7 +1698,8 @@ class _OrderFiche extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    '${expert?.prenom ?? ''} ${expert?.nom ?? 'Expert'}'.trim(),
+                    '${expert?.prenom ?? ''} ${expert?.nom ?? 'Prestataire'}'
+                        .trim(),
                     style: AppText.cardTitle,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -1719,7 +1717,7 @@ class _OrderFiche extends StatelessWidget {
             ),
             if (isAccepted || isDone)
               IconButton.filledTonal(
-                tooltip: "Appeler l'expert",
+                tooltip: 'Appeler le prestataire',
                 onPressed: onCall,
                 icon: const Icon(Icons.call_rounded),
               )
@@ -1779,7 +1777,7 @@ class _MapProviderCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final trade = TradeStyle.of(data.servicePropose);
+    final trade = ServiceStyle.ofServices(data.services);
     return Semantics(
       button: true,
       label: 'Voir la fiche de ${data.prenom} ${data.nom}',
@@ -1808,7 +1806,7 @@ class _MapProviderCard extends StatelessWidget {
                 ]),
                 const SizedBox(height: 6),
                 Row(children: [
-                  TradeTag(data.servicePropose),
+                  ServiceTags(data.services),
                   const SizedBox(width: AppSpace.sm),
                   Flexible(child: RatingInline(rating)),
                 ]),

@@ -83,14 +83,14 @@ class ProfileRepository {
   // --- Particulier (prestataire indépendant) ---
 
   /// Crée la fiche artisan. À l'inscription seul le numéro vérifié est
-  /// connu : nom, prénom, métier et photo sont complétés depuis l'espace
+  /// connu : nom, prénom, services et photo sont complétés depuis l'espace
   /// artisan (chaînes vides = « à compléter », voir `Particulier.profilManquant`).
   Future<void> createParticulier({
     required String id,
     required String telephone,
     String nom = '',
     String prenom = '',
-    String servicePropose = '',
+    List<String> services = const [],
     String? photoProUrl,
   }) async {
     try {
@@ -98,7 +98,7 @@ class ProfileRepository {
         'id': id,
         'nom': nom,
         'prenom': prenom,
-        'service_propose': servicePropose,
+        'services': services,
         'telephone': telephone,
         'photo_pro_url': photoProUrl ?? '',
       });
@@ -146,14 +146,14 @@ class ProfileRepository {
     required String nom,
     required String telephone,
     String? prenom,
-    String? servicePropose,
+    List<String>? services,
   }) async {
     try {
       await _client.from('particuliers').update({
         'nom': nom,
         'telephone': telephone,
         if (prenom != null) 'prenom': prenom,
-        if (servicePropose != null) 'service_propose': servicePropose,
+        if (services != null) 'services': services,
       }).eq('id', id);
     } catch (e, st) {
       throw mapError('ProfileRepository.updateParticulierInfo', e, st);

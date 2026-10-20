@@ -60,7 +60,7 @@ class _FakeProfiles extends Fake implements ProfileRepository {
     required String telephone,
     String nom = '',
     String prenom = '',
-    String servicePropose = '',
+    List<String> services = const [],
     String? photoProUrl,
   }) async =>
       created[id] = telephone;
@@ -70,8 +70,7 @@ class _FakeProfiles extends Fake implements ProfileRepository {
     final phone = created[id];
     return phone == null
         ? null
-        : Particulier(
-            id: id, nom: '', prenom: '', telephone: phone, servicePropose: '');
+        : Particulier(id: id, nom: '', prenom: '', telephone: phone);
   }
 }
 
@@ -86,7 +85,7 @@ Widget _app({_FakeAuth? auth, _FakeProfiles? profiles}) {
     GoRoute(path: '/', builder: (_, __) => const LoginPrestaPage()),
     GoRoute(
         path: AppRoutes.dashboardParticulier,
-        builder: (_, __) => const Text('ESPACE ARTISAN')),
+        builder: (_, __) => const Text('ESPACE PRESTATAIRE')),
   ]);
   return ProviderScope(
     overrides: [
@@ -118,14 +117,14 @@ Future<void> _typeCode(WidgetTester tester) async {
 }
 
 void main() {
-  testWidgets('Premier écran : numéro seul, ni mot de passe ni métier',
+  testWidgets('Premier écran : numéro seul, ni mot de passe ni services',
       (tester) async {
     await tester.pumpWidget(_app());
     await tester.pump(const Duration(seconds: 1));
     expect(find.text('Numéro de téléphone'), findsOneWidget);
     expect(find.text('Recevoir le code WhatsApp'), findsOneWidget);
     expect(find.text('Mot de passe'), findsNothing);
-    expect(find.text('Votre métier'), findsNothing);
+    expect(find.text('Vos services'), findsNothing);
     expect(find.text('Email'), findsNothing);
   });
 
@@ -147,7 +146,7 @@ void main() {
   });
 
   testWidgets(
-      'Inscription artisan : numéro → code → « Artisan » → son espace, '
+      'Inscription : numéro → code → « Indépendant » → son espace, '
       'compte créé avec le numéro seul', (tester) async {
     final auth = _FakeAuth();
     final profiles = _FakeProfiles(auth);
@@ -160,13 +159,13 @@ void main() {
 
     await _typeCode(tester);
     expect(find.text('Créer votre compte'), findsOneWidget);
-    expect(find.text('Artisan'), findsOneWidget);
-    expect(find.text('Votre métier'), findsNothing);
+    expect(find.text('Indépendant'), findsOneWidget);
+    expect(find.text('Vos services'), findsNothing);
 
     await tester.tap(find.text('Créer mon compte'));
     await _settle(tester);
     expect(profiles.created, {'u1': '+237699000001'});
-    expect(find.text('ESPACE ARTISAN'), findsOneWidget);
+    expect(find.text('ESPACE PRESTATAIRE'), findsOneWidget);
   });
 
   testWidgets('Compte existant : le code mène directement à son espace',
@@ -179,7 +178,7 @@ void main() {
     await _receiveCode(tester);
     await _typeCode(tester);
     expect(find.text('Créer votre compte'), findsNothing);
-    expect(find.text('ESPACE ARTISAN'), findsOneWidget);
+    expect(find.text('ESPACE PRESTATAIRE'), findsOneWidget);
   });
 
   testWidgets(

@@ -317,7 +317,7 @@ class _LoginCitoyenPageState extends ConsumerState<LoginCitoyenPage> {
                       if (showSubtitle) ...[
                         const SizedBox(height: AppSpace.sm),
                         Text(
-                          'Un artisan de confiance près de chez vous : plombier, électricien, maçon, froid & clim.',
+                          'Ménage, linge, poubelles, nuisibles : un prestataire de confiance près de chez vous, à prix fixe.',
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                           style: AppText.body

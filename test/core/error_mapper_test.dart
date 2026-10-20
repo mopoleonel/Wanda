@@ -40,8 +40,7 @@ void main() {
       expect(e.message, contains('WhatsApp'));
     });
 
-    test("échec d'envoi du code (Twilio) : pas la faute de l'utilisateur",
-        () {
+    test("échec d'envoi du code (Twilio) : pas la faute de l'utilisateur", () {
       final e = mapError(
           'test',
           const AuthException(

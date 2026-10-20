@@ -77,14 +77,14 @@ const _paul = Particulier(
     nom: 'Kamga',
     prenom: 'Paul',
     telephone: '+237699000001',
-    servicePropose: 'Plombier',
+    services: ['menage'],
     isAvailable: true);
 const _awa = Particulier(
     id: 'p2',
     nom: 'Ngo',
     prenom: 'Awa',
     telephone: '+237699000002',
-    servicePropose: 'Électricien',
+    services: ['linge', 'dechets'],
     isAvailable: true);
 
 const _citoyen = Citoyen(
@@ -131,37 +131,45 @@ void main() {
     addTearDown(tester.view.reset);
   }
 
-  testWidgets('Chargement puis experts en ligne, avec la salutation',
+  testWidgets('Chargement puis prestataires en ligne, avec la salutation',
       (tester) async {
     tallScreen(tester);
     await tester.pumpWidget(h.app());
     await _settle(tester);
-    expect(find.text('Recherche des experts en ligne…'), findsOneWidget);
+    expect(find.text('Recherche des prestataires en ligne…'), findsOneWidget);
 
     h.prestataires.controller.add([_paul, _awa]);
     await _settle(tester);
 
     expect(find.text('Bonjour, Lucie'), findsOneWidget);
-    expect(find.text('2 experts disponibles maintenant'), findsOneWidget);
+    expect(find.text('2 prestataires disponibles maintenant'), findsOneWidget);
     expect(find.text('Paul Kamga'), findsWidgets);
     expect(find.text('Awa Ngo'), findsWidgets);
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('Filtre par métier, et état vide avec retour à « Tous »',
+  testWidgets('Filtre par service, et état vide avec retour à « Tous »',
       (tester) async {
     tallScreen(tester);
     await tester.pumpWidget(h.app());
     h.prestataires.controller.add([_paul, _awa]);
     await _settle(tester);
 
-    await tester.ensureVisible(find.text('Maçon').first);
+    // Awa propose Linge et Déchets : visible sous Déchets.
+    await tester.ensureVisible(find.text('Déchets').first);
     await _settle(tester);
-    await tester.tap(find.text('Maçon').first);
+    await tester.tap(find.text('Déchets').first);
     await _settle(tester);
-    expect(find.text('Aucun maçon en ligne'), findsOneWidget);
+    expect(find.text('Awa Ngo'), findsWidgets);
+    expect(find.text('Paul Kamga'), findsNothing);
 
-    await tester.tap(find.text('Voir tous les métiers'));
+    await tester.ensureVisible(find.text('Nuisibles').first);
+    await _settle(tester);
+    await tester.tap(find.text('Nuisibles').first);
+    await _settle(tester);
+    expect(find.text('Personne en ligne pour ce service'), findsOneWidget);
+
+    await tester.tap(find.text('Voir tous les services'));
     await _settle(tester);
     expect(find.text('Paul Kamga'), findsWidgets);
     await tester.pumpWidget(const SizedBox());
@@ -174,18 +182,18 @@ void main() {
     h.prestataires.controller.add([_paul, _awa]);
     await _settle(tester);
 
-    // Changer de métier, d'onglet, puis revenir : aucun réabonnement.
-    await tester.tap(find.text('Plombier').first);
+    // Changer de service, d'onglet, puis revenir : aucun réabonnement.
+    await tester.tap(find.text('Ménage').first);
     await _settle(tester);
     await tester.tap(find.text('Mes demandes'));
     await _settle(tester);
-    await tester.tap(find.text('Experts'));
+    await tester.tap(find.text('Services'));
     await _settle(tester);
 
     expect(h.prestataires.listens, 1);
     expect(h.sollicitations.listens, 1);
-    // Les experts restent affichés sans repasser par le chargement.
-    expect(find.text('Recherche des experts en ligne…'), findsNothing);
+    // Les prestataires restent affichés sans repasser par le chargement.
+    expect(find.text('Recherche des prestataires en ligne…'), findsNothing);
     await tester.pumpWidget(const SizedBox());
   });
 
@@ -241,7 +249,7 @@ void main() {
         statut: 'accepte',
         dateSollicitation: DateTime.now(),
         expert: const SollicitationExpert(
-            nom: 'Kamga', prenom: 'Paul', servicePropose: 'Plombier'),
+            nom: 'Kamga', prenom: 'Paul', services: ['menage']),
       ),
     ]);
     await _settle(tester);
@@ -252,13 +260,14 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('Erreur de chargement des experts : « Réessayer » se réabonne',
+  testWidgets('Erreur de chargement : « Réessayer » se réabonne',
       (tester) async {
     tallScreen(tester);
     await tester.pumpWidget(h.app());
     h.prestataires.controller.addError(Exception('réseau'));
     await _settle(tester);
-    expect(find.text('Impossible de charger les experts.'), findsOneWidget);
+    expect(
+        find.text('Impossible de charger les prestataires.'), findsOneWidget);
 
     await tester.tap(find.text('Réessayer'));
     await _settle(tester);
@@ -268,7 +277,7 @@ void main() {
 
   for (final size in const [Size(360, 640), Size(412, 915)]) {
     testWidgets(
-        'Liste des experts sans débordement en '
+        'Liste des prestataires sans débordement en '
         '${size.width.toInt()}×${size.height.toInt()}', (tester) async {
       tester.view.devicePixelRatio = 3;
       tester.view.physicalSize = size * 3;

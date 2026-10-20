@@ -447,7 +447,7 @@ class _CertificationPageState extends ConsumerState<CertificationPage> {
                           .copyWith(color: AppColors.letterheadDeep)),
                   const SizedBox(height: 2),
                   Text(
-                      'Affiché sur votre fiche : les citoyens choisissent plus volontiers un artisan certifié.',
+                      'Affiché sur votre fiche : les citoyens choisissent plus volontiers un prestataire certifié.',
                       style: AppText.caption
                           .copyWith(color: AppColors.letterheadDeep)),
                 ],
@@ -476,7 +476,7 @@ class _CertificationPageState extends ConsumerState<CertificationPage> {
             AppColors.surfaceSunk,
             AppColors.inkSoft,
             'Des informations figées',
-            'Ensuite, vos nom, prénom, métier et numéro ne pourront plus être modifiés : vérifiez-les avant de commencer.'),
+            'Ensuite, vos nom, prénom et numéro ne pourront plus être modifiés, et vos services ne pourront plus être retirés : vérifiez-les avant de commencer.'),
         const SizedBox(height: AppSpace.md),
         Container(
           padding: const EdgeInsets.all(AppSpace.md),

@@ -1,9 +1,13 @@
+import 'categorie_service.dart';
+
 class Particulier {
   final String id;
   final String nom;
   final String prenom;
   final String telephone;
-  final String servicePropose;
+
+  /// Codes des services proposés (voir [CategorieService]).
+  final List<String> services;
   final String? photoProUrl;
   final bool isAvailable;
   final double? latitude;
@@ -20,7 +24,7 @@ class Particulier {
     required this.nom,
     required this.prenom,
     required this.telephone,
-    required this.servicePropose,
+    this.services = const [],
     this.photoProUrl,
     this.isAvailable = false,
     this.latitude,
@@ -36,7 +40,8 @@ class Particulier {
         nom: (map['nom'] as String?) ?? '',
         prenom: (map['prenom'] as String?) ?? '',
         telephone: (map['telephone'] as String?) ?? '',
-        servicePropose: (map['service_propose'] as String?) ?? '',
+        services: CategorieService.codesValides(
+            (map['services'] as List?) ?? const []),
         photoProUrl: map['photo_pro_url'] as String?,
         isAvailable: (map['is_available'] as bool?) ?? false,
         latitude: (map['latitude'] as num?)?.toDouble(),
@@ -56,29 +61,38 @@ class Particulier {
         if ((photoProUrl ?? '').trim().isEmpty) 'photo professionnelle',
         if (nom.trim().isEmpty) 'nom',
         if (prenom.trim().isEmpty) 'prénom',
-        if (servicePropose.trim().isEmpty) 'métier',
+        if (services.isEmpty) 'services proposés',
       ];
 
   static const int profilElements = 4;
 
   /// Le minimum pour être visible des citoyens (passer « en ligne ») :
-  /// une fiche sans nom ni métier ne peut pas être proposée.
+  /// une fiche sans nom ni service ne peut pas être proposée.
   List<String> get infosVisibiliteManquantes => [
         if (nom.trim().isEmpty) 'nom',
         if (prenom.trim().isEmpty) 'prénom',
-        if (servicePropose.trim().isEmpty) 'métier',
+        if (services.isEmpty) 'services proposés',
       ];
 
   bool get profilComplet => profilManquant.isEmpty;
 
   /// Informations figées dès qu'une certification est en cours ou obtenue :
   /// elles doivent rester celles de la pièce vérifiée. Même règle côté base
-  /// (trigger `figer_identite_certifiee`). La photo reste modifiable.
-  static const champsFiges = ['nom', 'prénom', 'métier', 'téléphone'];
+  /// (trigger `figer_identite_certifiee`). La photo reste modifiable ; les
+  /// services peuvent être complétés mais jamais retirés (voir
+  /// [servicesModifiables]).
+  static const champsFiges = ['nom', 'prénom', 'téléphone'];
 
   /// Vrai si [champsFiges] ne peuvent plus être modifiés par l'artisan.
   bool identiteFigee({bool verificationEnCours = false}) =>
       identiteVerifiee || verificationEnCours;
+
+  /// Un compte figé peut ajouter des services, pas en retirer : les avis et
+  /// le badge ont été obtenus sur ceux-là.
+  bool servicesModifiables(List<String> nouveaux,
+          {bool verificationEnCours = false}) =>
+      !identiteFigee(verificationEnCours: verificationEnCours) ||
+      services.every(nouveaux.contains);
 
   /// Jours d'abonnement restants, arrondis au jour supérieur : un essai de
   /// 14 jours activé à l'instant affiche bien « 14 jours ».

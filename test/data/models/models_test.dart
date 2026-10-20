@@ -12,7 +12,7 @@ void main() {
         'nom': 'Fouda',
         'prenom': 'Jean',
         'telephone': '699000000',
-        'service_propose': 'Plombier',
+        'services': ['menage', 'Plombier', 'linge', 'menage'],
         'photo_pro_url': 'https://x/y.jpg',
         'is_available': true,
         'latitude': 3.848,
@@ -24,7 +24,8 @@ void main() {
       });
 
       expect(p.id, 'u1');
-      expect(p.servicePropose, 'Plombier');
+      // Codes inconnus (anciens métiers) et doublons écartés.
+      expect(p.services, ['menage', 'linge']);
       expect(p.isAvailable, isTrue);
       expect(p.latitude, closeTo(3.848, 0.0001));
       expect(p.hasValidSubscription, isTrue);

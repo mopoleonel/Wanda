@@ -89,8 +89,7 @@ Widget _app(_FakeSignalements sigs, [_FakeProfiles? profiles]) {
   return ProviderScope(
     overrides: [
       authRepositoryProvider.overrideWithValue(_FakeAuth()),
-      profileRepositoryProvider
-          .overrideWithValue(profiles ?? _FakeProfiles()),
+      profileRepositoryProvider.overrideWithValue(profiles ?? _FakeProfiles()),
       signalementRepositoryProvider.overrideWithValue(sigs),
     ],
     child: MaterialApp.router(theme: AppTheme.light, routerConfig: router),

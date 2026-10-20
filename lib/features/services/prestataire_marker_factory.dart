@@ -9,7 +9,7 @@ import '../../core/widgets/bordereau.dart';
 
 /// Génère des icônes de marqueur Google Maps circulaires affichant la photo
 /// du prestataire (avec repli sur une silhouette si pas de photo), un
-/// anneau à la couleur de son métier (même code couleur que les onglets et
+/// anneau à la couleur de son service principal (même code couleur que les onglets et
 /// les fiches), et un point vert s'il est disponible.
 ///
 /// Les bitmaps sont mis en cache par prestataire pour éviter de refaire le
@@ -26,17 +26,17 @@ class PrestataireMarkerFactory {
   static Future<BitmapDescriptor> build({
     required String id,
     String? photoUrl,
-    String? trade,
+    String? service,
     bool isOnline = true,
     double devicePixelRatio = 2.5,
   }) async {
-    final cacheKey = '$id|${photoUrl ?? ''}|$isOnline|${trade ?? ''}';
+    final cacheKey = '$id|${photoUrl ?? ''}|$isOnline|${service ?? ''}';
     final cached = _cache[cacheKey];
     if (cached != null) return cached;
 
     final bitmap = await _render(
       photoUrl: photoUrl,
-      trade: TradeStyle.of(trade),
+      trade: ServiceStyle.of(service),
       isOnline: isOnline,
       devicePixelRatio: devicePixelRatio,
     );
@@ -74,7 +74,7 @@ class PrestataireMarkerFactory {
 
   static Future<BitmapDescriptor> _render({
     required String? photoUrl,
-    required TradeStyle trade,
+    required ServiceStyle trade,
     required bool isOnline,
     required double devicePixelRatio,
   }) async {
@@ -106,7 +106,7 @@ class PrestataireMarkerFactory {
             const MaskFilter.blur(BlurStyle.normal, logicalSize * 0.035),
     );
 
-    // Anneau blanc puis anneau à la couleur du métier.
+    // Anneau blanc puis anneau à la couleur du service.
     canvas.drawCircle(
         center, photoRadius + ringGap, Paint()..color = Colors.white);
     canvas.drawCircle(

@@ -1,24 +1,27 @@
+import 'categorie_service.dart';
+
 class SollicitationExpert {
   final String nom;
   final String? prenom;
   final String? telephone;
-  final String? servicePropose;
+  final List<String> services;
   final String? photoProUrl;
 
   const SollicitationExpert({
     required this.nom,
     this.prenom,
     this.telephone,
-    this.servicePropose,
+    this.services = const [],
     this.photoProUrl,
   });
 
   factory SollicitationExpert.fromMap(Map<String, dynamic> map) =>
       SollicitationExpert(
-        nom: (map['nom'] as String?) ?? 'Expert',
+        nom: (map['nom'] as String?) ?? 'Prestataire',
         prenom: map['prenom'] as String?,
         telephone: map['telephone'] as String?,
-        servicePropose: map['service_propose'] as String?,
+        services: CategorieService.codesValides(
+            (map['services'] as List?) ?? const []),
         photoProUrl: map['photo_pro_url'] as String?,
       );
 }

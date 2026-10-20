@@ -75,13 +75,13 @@ AppException mapError(String context, Object error, [StackTrace? stackTrace]) {
     }
     if (error.message.contains('IDENTITE_FIGEE')) {
       return AppException(
-          "Compte certifié : nom, prénom, métier et numéro ne peuvent plus être modifiés. Contactez l'équipe WANDA pour une correction.",
+          "Compte certifié : nom, prénom et numéro ne peuvent plus être modifiés, et vos services ne peuvent plus être retirés. Contactez l'équipe WANDA pour une correction.",
           cause: error,
           stackTrace: stackTrace);
     }
     if (error.message.contains('PROFIL_INCOMPLET')) {
       return AppException(
-          'Complétez votre profil (photo, nom, prénom, métier) avant de demander la certification.',
+          'Complétez votre profil (photo, nom, prénom, services) avant de demander la certification.',
           cause: error,
           stackTrace: stackTrace);
     }

@@ -34,6 +34,7 @@ import '../../core/widgets/bordereau.dart';
 import '../../core/widgets/city_backdrop.dart';
 import '../../core/widgets/status_views.dart';
 import '../../data/models/avis_prestataire.dart';
+import '../../data/models/categorie_service.dart';
 import '../../data/models/particulier.dart';
 import '../../data/models/sollicitation.dart';
 import '../../data/models/verification_identite.dart';
@@ -76,8 +77,8 @@ class _DashboardParticulierPageState
     };
   }
 
-  /// Nom, prénom, métier et numéro figés : certification en cours ou
-  /// obtenue (voir [Particulier.champsFiges]).
+  /// Nom, prénom et numéro figés, services seulement complétables :
+  /// certification en cours ou obtenue (voir [Particulier.champsFiges]).
   bool get _identityFrozen =>
       particulier?.identiteFigee(
           verificationEnCours: _identityState == _IdentityState.pending) ??
@@ -94,11 +95,11 @@ class _DashboardParticulierPageState
 
   static const int _profileItems = Particulier.profilElements;
 
-  /// Le minimum pour être visible des citoyens (nom, prénom, métier).
+  /// Le minimum pour être visible des citoyens (nom, prénom, services).
   List<String> get _visibilityMissing =>
       particulier?.infosVisibiliteManquantes ?? const [];
 
-  static const _metierAChoisir = 'Métier à choisir';
+  static const _servicesAChoisir = 'Services à choisir';
 
   List<Sollicitation> sollicitations = [];
   List<FlSpot> graphSpots = [];
@@ -106,7 +107,9 @@ class _DashboardParticulierPageState
   final TextEditingController _nomController = TextEditingController();
   final TextEditingController _prenomController = TextEditingController();
   final TextEditingController _phoneController = TextEditingController();
-  String? _editedTrade;
+
+  /// Services cochés dans le profil (codes), avant enregistrement.
+  List<String> _editedServices = const [];
   Timer? _clock;
 
   @override
@@ -188,8 +191,7 @@ class _DashboardParticulierPageState
           _nomController.text = data.nom;
           _prenomController.text = data.prenom;
           _phoneController.text = data.telephone;
-          _editedTrade =
-              data.servicePropose.isEmpty ? null : data.servicePropose;
+          _editedServices = List.of(data.services);
           isLoading = false;
         });
         _maybePromptCertification();
@@ -332,7 +334,7 @@ class _DashboardParticulierPageState
                 'Faites certifier votre compte',
                 'CNI + selfie, environ 2 minutes. Les citoyens voient le '
                     'badge « Identité vérifiée » sur votre fiche et '
-                    'choisissent plus volontiers un artisan certifié.',
+                    'choisissent plus volontiers un prestataire certifié.',
                 'Certifier mon compte',
               );
 
@@ -374,8 +376,9 @@ class _DashboardParticulierPageState
                 const SizedBox(width: AppSpace.sm),
                 Expanded(
                   child: Text(
-                      'Après certification, vos nom, prénom, métier et numéro '
-                      'ne pourront plus être modifiés.',
+                      'Après certification, vos nom, prénom et numéro ne '
+                      'pourront plus être modifiés, et vos services ne pourront '
+                      'plus être retirés.',
                       style: AppText.caption),
                 ),
               ]),
@@ -420,7 +423,7 @@ class _DashboardParticulierPageState
 
   Future<void> _toggleVisibility(bool value) async {
     // Inscrit avec son seul numéro : pas visible des citoyens tant que la
-    // fiche n'a ni nom ni métier.
+    // fiche n'a ni nom ni service.
     final manquant = _visibilityMissing;
     if (value && manquant.isNotEmpty) {
       setState(() => _selectedIndex = 2);
@@ -456,9 +459,14 @@ class _DashboardParticulierPageState
   }
 
   Future<void> _updateProfileInfo() async {
-    if (_identityFrozen) {
+    final frozen = _identityFrozen;
+    if (frozen &&
+        !(particulier?.servicesModifiables(_editedServices,
+                verificationEnCours:
+                    _identityState == _IdentityState.pending) ??
+            true)) {
       _showSnackBar(
-          'Compte certifié : ces informations ne peuvent plus être modifiées.');
+          'Compte certifié : vous pouvez ajouter des services, pas en retirer.');
       return;
     }
     if (_nomController.text.trim().isEmpty ||
@@ -466,8 +474,8 @@ class _DashboardParticulierPageState
       _showSnackBar("Le nom et le prénom sont obligatoires.");
       return;
     }
-    if (_editedTrade == null) {
-      _showSnackBar("Choisissez votre métier.");
+    if (_editedServices.isEmpty) {
+      _showSnackBar('Choisissez au moins un service.');
       return;
     }
     setState(() => isLoading = true);
@@ -476,7 +484,7 @@ class _DashboardParticulierPageState
             id: _userId,
             nom: _nomController.text.trim(),
             prenom: _prenomController.text.trim(),
-            servicePropose: _editedTrade,
+            services: CategorieService.codesValides(_editedServices),
             // Le numéro est l'identifiant de connexion : non modifiable ici.
             telephone: particulier?.telephone ?? _phoneController.text.trim(),
           );
@@ -561,9 +569,9 @@ class _DashboardParticulierPageState
 
   String get _displayName {
     final p = particulier;
-    if (p == null) return 'Artisan';
+    if (p == null) return 'Prestataire';
     final full = '${p.prenom} ${p.nom}'.trim();
-    return full.isEmpty ? 'Artisan' : full;
+    return full.isEmpty ? 'Prestataire' : full;
   }
 
   String get _firstName {
@@ -714,10 +722,9 @@ class _DashboardParticulierPageState
     );
   }
 
-  /// En-tête : la ville en duotone, le nom de l'artisan et son métier.
+  /// En-tête : la ville en duotone, le nom du prestataire et ses services.
   Widget _buildHero() {
     final topInset = MediaQuery.paddingOf(context).top;
-    final trade = TradeStyle.of(particulier?.servicePropose);
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle.light
           .copyWith(statusBarColor: Colors.transparent),
@@ -736,7 +743,7 @@ class _DashboardParticulierPageState
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisAlignment: MainAxisAlignment.end,
                     children: [
-                      Text('Espace artisan',
+                      Text('Espace prestataire',
                           style: AppText.label
                               .copyWith(color: AppColors.onLetterheadSoft)),
                       const SizedBox(height: 6),
@@ -761,36 +768,15 @@ class _DashboardParticulierPageState
                                     fontWeight: FontWeight.w700)),
                           ]),
                         ),
-                      // Passe à la ligne si le métier et la note ne tiennent
+                      // Passe à la ligne si les services et la note ne tiennent
                       // pas côte à côte (petit écran, texte agrandi).
                       Wrap(
                           spacing: AppSpace.sm,
                           runSpacing: 6,
                           crossAxisAlignment: WrapCrossAlignment.center,
                           children: [
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 8, vertical: 3),
-                              decoration: BoxDecoration(
-                                color: trade.tint,
-                                borderRadius: BorderRadius.circular(6),
-                              ),
-                              child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(trade.icon,
-                                        size: 14, color: trade.ink),
-                                    const SizedBox(width: 4),
-                                    Text(
-                                        (particulier?.servicePropose ?? '')
-                                                .isEmpty
-                                            ? _metierAChoisir
-                                            : trade.label,
-                                        style: AppText.caption.copyWith(
-                                            color: trade.ink,
-                                            fontWeight: FontWeight.w700)),
-                                  ]),
-                            ),
+                            ServiceTags(particulier?.services ?? const [],
+                                max: 3, emptyLabel: _servicesAChoisir),
                             Row(mainAxisSize: MainAxisSize.min, children: [
                               Icon(Icons.star_rounded,
                                   size: 16,
@@ -826,7 +812,9 @@ class _DashboardParticulierPageState
                       child: IdPhoto(
                           url: particulier?.photoProUrl,
                           size: 56,
-                          tint: trade.tint),
+                          tint: ServiceStyle.ofServices(
+                                  particulier?.services ?? const [])
+                              .tint),
                     ),
                   ),
                 ),
@@ -1097,7 +1085,7 @@ class _DashboardParticulierPageState
       padding: EdgeInsets.zero,
       children: [
         const Letterhead(
-          title: 'Ma fiche artisan',
+          title: 'Ma fiche prestataire',
           subtitle: 'Ces informations sont visibles par les citoyens.',
         ),
         Padding(
@@ -1140,8 +1128,8 @@ class _DashboardParticulierPageState
                     children: [
                       Text(_displayName, style: AppText.sectionTitle),
                       const SizedBox(height: 6),
-                      TradeTag(particulier?.servicePropose,
-                          emptyLabel: _metierAChoisir),
+                      ServiceTags(particulier?.services ?? const [],
+                          max: 4, emptyLabel: _servicesAChoisir),
                     ],
                   ),
                 ),
@@ -1161,46 +1149,43 @@ class _DashboardParticulierPageState
               _buildInputField(
                   'Prénom', _prenomController, Icons.person_outline_rounded,
                   locked: frozen),
-              Text('Votre métier', style: AppText.label),
+              Text('Vos services', style: AppText.label),
+              const SizedBox(height: 2),
+              Text(
+                  frozen
+                      ? 'Compte certifié : vous pouvez ajouter des services, pas en retirer.'
+                      : 'Cochez tout ce que vous proposez.',
+                  style: AppText.caption),
               const SizedBox(height: AppSpace.sm),
-              if (frozen)
-                Semantics(
-                  label: 'Métier figé par la certification',
-                  child: Row(children: [
-                    Expanded(
-                      child: SizedBox(
-                        height: 56,
-                        child: TradeChoiceTile(
-                          style: TradeStyle.of(particulier?.servicePropose),
-                          selected: true,
-                          onTap: () {},
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: AppSpace.md),
-                    const Icon(Icons.lock_outline_rounded,
-                        size: 20, color: AppColors.inkMuted),
-                  ]),
-                )
-              else
-                GridView.count(
-                  crossAxisCount: 2,
-                  shrinkWrap: true,
-                  padding: EdgeInsets.zero,
-                  physics: const NeverScrollableScrollPhysics(),
-                  mainAxisSpacing: AppSpace.sm,
-                  crossAxisSpacing: AppSpace.sm,
-                  childAspectRatio: 2.6,
-                  children: [
-                    for (final name
-                        in TradeStyle.names.where((n) => n != 'Tous'))
-                      TradeChoiceTile(
-                        style: TradeStyle.of(name),
-                        selected: _editedTrade == name,
-                        onTap: () => setState(() => _editedTrade = name),
-                      ),
-                  ],
-                ),
+              GridView.count(
+                crossAxisCount: 2,
+                shrinkWrap: true,
+                padding: EdgeInsets.zero,
+                physics: const NeverScrollableScrollPhysics(),
+                mainAxisSpacing: AppSpace.sm,
+                crossAxisSpacing: AppSpace.sm,
+                childAspectRatio: 2.6,
+                children: [
+                  for (final c in CategorieService.values)
+                    Builder(builder: (context) {
+                      final selected = _editedServices.contains(c.code);
+                      // Certifié : un service déjà enregistré reste coché.
+                      final locked = frozen &&
+                          (particulier?.services.contains(c.code) ?? false);
+                      return ServiceChoiceTile(
+                        style: ServiceStyle.ofCategorie(c),
+                        selected: selected,
+                        locked: locked,
+                        onTap: () {
+                          if (locked) return;
+                          setState(() => _editedServices = selected
+                              ? (List.of(_editedServices)..remove(c.code))
+                              : [..._editedServices, c.code]);
+                        },
+                      );
+                    }),
+                ],
+              ),
               const SizedBox(height: AppSpace.lg),
               Padding(
                 padding: const EdgeInsets.only(bottom: AppSpace.lg),
@@ -1217,15 +1202,12 @@ class _DashboardParticulierPageState
                   ),
                 ),
               ),
-              // Certifié : plus rien à enregistrer ici (la photo s'enregistre
-              // à part).
-              if (!frozen)
-                FilledButton(
-                  onPressed: _updateProfileInfo,
-                  style: FilledButton.styleFrom(
-                      minimumSize: const Size(double.infinity, 54)),
-                  child: const Text('Enregistrer'),
-                ),
+              FilledButton(
+                onPressed: _updateProfileInfo,
+                style: FilledButton.styleFrom(
+                    minimumSize: const Size(double.infinity, 54)),
+                child: const Text('Enregistrer'),
+              ),
               const SizedBox(height: AppSpace.xl),
               if (_identityState != null) ...[
                 Text('Badge de confiance', style: AppText.sectionTitle),
@@ -1834,9 +1816,10 @@ class _FrozenNotice extends StatelessWidget {
         const SizedBox(width: AppSpace.sm),
         Expanded(
           child: Text(
-            'Compte certifié : nom, prénom, métier et numéro correspondent à '
-            "votre pièce d'identité et ne peuvent plus être modifiés. Pour une "
-            "correction, contactez l'équipe WANDA.",
+            'Compte certifié : nom, prénom et numéro correspondent à votre '
+            "pièce d'identité et ne peuvent plus être modifiés ; vos services "
+            "peuvent être complétés, pas retirés. Pour une correction, "
+            "contactez l'équipe WANDA.",
             style: AppText.caption.copyWith(color: AppColors.ink),
           ),
         ),
@@ -1906,7 +1889,7 @@ class _CertificationCard extends StatelessWidget {
                 AppColors.letterhead,
                 AppColors.greenTint,
                 'Obtenez le badge de confiance',
-                'Facultatif : certifiez votre identité (CNI + selfie, 2 min). Les citoyens choisissent plus volontiers un artisan vérifié.',
+                'Facultatif : certifiez votre identité (CNI + selfie, 2 min). Les citoyens choisissent plus volontiers un prestataire vérifié.',
                 'Certifier mon compte',
               ),
           };

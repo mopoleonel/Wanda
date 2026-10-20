@@ -9,8 +9,8 @@ import 'package:google_fonts/google_fonts.dart';
 /// - un vert administratif profond pour les en-têtes (papier à en-tête,
 ///   couleur de marque conservée) ;
 /// - une encre de tampon violette réservée aux statuts ;
-/// - des copies carbone colorées comme code couleur fixe par métier
-///   (voir `TradeStyle`) ;
+/// - des copies carbone colorées comme code couleur fixe par service
+///   (voir `ServiceStyle`) ;
 /// - des filets d'un pixel plutôt que des ombres.
 class AppColors {
   AppColors._();

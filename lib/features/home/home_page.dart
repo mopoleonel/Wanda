@@ -30,14 +30,9 @@ class _HomePageState extends ConsumerState<HomePage>
   late final AnimationController _pulse = AnimationController(
       vsync: this, duration: const Duration(milliseconds: 2600));
 
-  /// Démo : une demande d'artisan avance (envoyée → en route → terminée),
-  /// puis on passe au métier suivant.
-  static const _demoTrades = [
-    'Plombier',
-    'Électricien',
-    'Maçon',
-    'Froid & Clim',
-  ];
+  /// Démo : une demande de service avance (envoyée → confirmée →
+  /// terminée), puis on passe au service suivant.
+  static const _demoTrades = ['menage', 'linge', 'dechets', 'nuisibles'];
   int _demoStep = 0;
   int _demoTrade = 0;
   Timer? _demoTimer;
@@ -133,7 +128,7 @@ class _HomePageState extends ConsumerState<HomePage>
                           _reveal(
                               0.35,
                               _DemoRequest(
-                                  trade: TradeStyle.of(_demoTrades[_demoTrade]),
+                                  code: _demoTrades[_demoTrade],
                                   step: _demoStep)),
                           _reveal(
                               0.45,
@@ -148,7 +143,7 @@ class _HomePageState extends ConsumerState<HomePage>
                             _RoleFiche(
                               title: 'Citoyen',
                               description:
-                                  'Un artisan de confiance, près de chez vous.',
+                                  'Ménage, linge, poubelles, nuisibles : à prix fixe.',
                               icon: Icons.person_rounded,
                               tint: AppColors.greenTint,
                               ink: AppColors.letterheadDeep,
@@ -167,7 +162,7 @@ class _HomePageState extends ConsumerState<HomePage>
                             _RoleFiche(
                               title: 'Prestataire',
                               description:
-                                  'Artisan ou entreprise : recevez des missions.',
+                                  'Proposez vos services ou recevez des missions.',
                               icon: Icons.business_center_rounded,
                               tint: AppColors.stampVioletTint,
                               ink: AppColors.stampViolet,
@@ -274,7 +269,7 @@ class _HomePageState extends ConsumerState<HomePage>
                         _reveal(
                           0.22,
                           Text(
-                            'Plombier, électricien, maçon, froid & clim : trouvez un artisan près de chez vous et suivez son intervention.',
+                            'Ménage, linge, poubelles, nuisibles : un prestataire près de chez vous, au prix fixé par WANDA, et vous suivez sa venue.',
                             style: AppText.body
                                 .copyWith(color: AppColors.onLetterheadSoft),
                             maxLines: 3,
@@ -353,23 +348,33 @@ class _RadarPainter extends CustomPainter {
   bool shouldRepaint(covariant _RadarPainter oldDelegate) => false;
 }
 
-/// Exemple de demande d'artisan : le métier défile, le tampon avance
-/// (ENVOYÉE → EN ROUTE → TERMINÉE, les vrais statuts d'une demande).
+/// Exemple de demande de service : le service défile, le tampon avance
+/// (ENVOYÉE → CONFIRMÉE → TERMINÉE, les vrais statuts d'une demande).
 class _DemoRequest extends StatelessWidget {
-  final TradeStyle trade;
+  final String code;
   final int step;
-  const _DemoRequest({required this.trade, required this.step});
+  const _DemoRequest({required this.code, required this.step});
+
+  ServiceStyle get trade => ServiceStyle.of(code);
 
   static const _stamps = [
     FicheStatus('ENVOYÉE', StampTone.received),
-    FicheStatus('EN ROUTE', StampTone.progress),
+    FicheStatus('CONFIRMÉE', StampTone.progress),
     FicheStatus('TERMINÉE', StampTone.done),
   ];
   static const _lines = [
-    'Demande envoyée aux artisans proches',
-    'Un artisan a accepté, il arrive',
-    'Intervention terminée, vous notez',
+    'Prix fixé par WANDA, demande envoyée',
+    'Un prestataire proche a confirmé',
+    'Service terminé, vous notez',
   ];
+
+  /// Titre de l'exemple, par service.
+  static const _titres = {
+    'menage': 'Grand ménage, 3 pièces',
+    'linge': 'Lessive et repassage',
+    'dechets': 'Poubelles, 2 fois par semaine',
+    'nuisibles': 'Traitement anti-cafards',
+  };
   static const _icons = [
     Icons.wifi_tethering_rounded,
     Icons.directions_walk_rounded,
@@ -381,7 +386,7 @@ class _DemoRequest extends StatelessWidget {
     final ink = _stamps[step].ink;
     return Semantics(
       label:
-          "Exemple : une demande d'artisan passe d'envoyée à en route puis terminée.",
+          "Exemple : une demande de service passe d'envoyée à confirmée puis terminée.",
       excludeSemantics: true,
       child: FicheCard(
         padding: const EdgeInsets.fromLTRB(16, 14, 14, 16),
@@ -427,8 +432,8 @@ class _DemoRequest extends StatelessWidget {
                         ),
                       ),
                       child: Text(
-                        "Besoin d'un ${trade.label.toLowerCase()}",
-                        key: ValueKey(trade.label),
+                        _titres[code] ?? trade.libelle,
+                        key: ValueKey(code),
                         style: AppText.cardTitle.copyWith(fontSize: 17),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
@@ -464,7 +469,7 @@ class _StepTrack extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const labels = ['Envoyée', 'En route', 'Terminée'];
+    const labels = ['Envoyée', 'Confirmée', 'Terminée'];
     const inks = [AppColors.stampViolet, AppColors.progress, AppColors.done];
     return Row(
       children: List.generate(3, (i) {

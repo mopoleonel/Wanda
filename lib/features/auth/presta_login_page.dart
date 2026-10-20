@@ -3,7 +3,7 @@
 // Espace prestataire : inscription ET connexion par NUMÉRO DE TÉLÉPHONE + code
 // reçu sur WhatsApp (pas de mot de passe). Au premier code vérifié, on demande
 // seulement « Artisan ou Entreprise ? » : l'artisan est créé avec son numéro
-// seul et complète nom, métier, photo puis certification depuis son espace.
+// seul et complète nom, services, photo puis certification depuis son espace.
 // C'est le seul moyen de connexion : il n'y a plus de mot de passe.
 // -----------------------------------------------------------------------------
 
@@ -458,8 +458,8 @@ class _LoginPrestaPageState extends ConsumerState<LoginPrestaPage> {
           segments: const [
             ButtonSegment(
                 value: false,
-                icon: Icon(Icons.handyman_rounded),
-                label: Text('Artisan')),
+                icon: Icon(Icons.person_rounded),
+                label: Text('Indépendant')),
             ButtonSegment(
                 value: true,
                 icon: Icon(Icons.apartment_rounded),
@@ -506,7 +506,7 @@ class _LoginPrestaPageState extends ConsumerState<LoginPrestaPage> {
             const SizedBox(width: AppSpace.sm),
             Expanded(
               child: Text(
-                'Nom, métier et photo se complètent ensuite dans votre espace, puis vous pourrez obtenir le badge « Identité vérifiée ».',
+                'Nom, services et photo se complètent ensuite dans votre espace, puis vous pourrez obtenir le badge « Identité vérifiée ».',
                 style: AppText.caption,
               ),
             ),

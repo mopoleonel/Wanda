@@ -5,11 +5,12 @@ import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../data/models/avis_prestataire.dart';
+import '../../data/models/categorie_service.dart';
 import '../theme/app_theme.dart';
 
 // =============================================================================
 // Briques du monde « bordereau tamponné » : tampons de statut, numéros de
-// fiche, en-tête officiel perforé, code couleur par métier, photo d'identité.
+// fiche, en-tête officiel perforé, code couleur par service, photo d'identité.
 // =============================================================================
 
 /// Teinte d'encre d'un tampon.
@@ -176,53 +177,89 @@ class FicheNumber extends StatelessWidget {
 }
 
 // -----------------------------------------------------------------------------
-// Code couleur par métier : une « copie carbone » par métier, identique sur
-// les onglets, les fiches et la carte.
+// Code couleur par service : une « copie carbone » par catégorie, identique
+// sur les onglets, les fiches, les questionnaires et la carte.
 // -----------------------------------------------------------------------------
 
-class TradeStyle {
+class ServiceStyle {
+  /// Libellé court (onglets, étiquettes).
   final String label;
+
+  /// Libellé complet (titres).
+  final String libelle;
   final IconData icon;
   final Color tint; // fond carbone
   final Color ink; // texte / icône sur ce fond
 
-  const TradeStyle(this.label, this.icon, this.tint, this.ink);
+  const ServiceStyle(this.label, this.libelle, this.icon, this.tint, this.ink);
 
-  static const all = TradeStyle('Tous', Icons.apps_rounded, AppColors.greenTint,
-      AppColors.letterheadDeep);
+  static const tousCode = 'tous';
 
-  static const _byName = <String, TradeStyle>{
-    'Plombier': TradeStyle('Plombier', Icons.plumbing_rounded,
-        Color(0xFFD8E7F8), Color(0xFF1B4F8C)),
-    'Électricien': TradeStyle('Électricien', Icons.electrical_services_rounded,
-        Color(0xFFF7E9A6), Color(0xFF6E5400)),
-    'Maçon': TradeStyle('Maçon', Icons.construction_rounded, Color(0xFFF6D8DF),
-        Color(0xFF8E2F4C)),
-    'Froid & Clim': TradeStyle('Froid & Clim', Icons.ac_unit_rounded,
-        Color(0xFFD5EEEA), Color(0xFF14665A)),
+  static const tous = ServiceStyle('Tous', 'Tous les services',
+      Icons.apps_rounded, AppColors.greenTint, AppColors.letterheadDeep);
+
+  static const _byCategorie = <CategorieService, (IconData, Color, Color)>{
+    CategorieService.menage: (
+      Icons.cleaning_services_rounded,
+      Color(0xFFD8E7F8),
+      Color(0xFF1B4F8C)
+    ),
+    CategorieService.linge: (
+      Icons.local_laundry_service_rounded,
+      Color(0xFFF6D8DF),
+      Color(0xFF8E2F4C)
+    ),
+    CategorieService.dechets: (
+      Icons.delete_sweep_rounded,
+      Color(0xFFD5EEEA),
+      Color(0xFF14665A)
+    ),
+    CategorieService.nuisibles: (
+      Icons.pest_control_rounded,
+      Color(0xFFF7E9A6),
+      Color(0xFF6E5400)
+    ),
   };
 
-  static List<String> get names => ['Tous', ..._byName.keys];
-
-  static TradeStyle of(String? name) {
-    if (name == null || name.isEmpty || name == 'Tous') return all;
-    return _byName[name] ??
-        TradeStyle(name, Icons.handyman_rounded, AppColors.surfaceSunk,
-            AppColors.inkSoft);
+  static ServiceStyle ofCategorie(CategorieService c) {
+    final (icon, tint, ink) = _byCategorie[c]!;
+    return ServiceStyle(c.court, c.libelle, icon, tint, ink);
   }
+
+  /// Onglets : « Tous » puis les codes des catégories.
+  static List<String> get codes =>
+      [tousCode, for (final c in CategorieService.values) c.code];
+
+  /// Style d'un code de catégorie ; « Tous » pour vide ou `tous`.
+  static ServiceStyle of(String? code) {
+    if (code == null || code.isEmpty || code == tousCode) return tous;
+    final c = CategorieService.fromCode(code);
+    return c != null
+        ? ofCategorie(c)
+        : ServiceStyle(code, code, Icons.home_repair_service_rounded,
+            AppColors.surfaceSunk, AppColors.inkSoft);
+  }
+
+  /// Style principal d'un prestataire : sa première catégorie.
+  static ServiceStyle ofServices(List<String> services) =>
+      services.isEmpty ? of(null) : of(services.first);
 }
 
-/// Étiquette métier compacte (copie carbone).
-class TradeTag extends StatelessWidget {
-  final String? trade;
+/// Étiquette de service compacte (copie carbone).
+class ServiceTag extends StatelessWidget {
+  final String? code;
 
-  /// Libellé quand aucun métier n'est renseigné.
+  /// Libellé quand aucun service n'est renseigné.
   final String emptyLabel;
-  const TradeTag(this.trade, {this.emptyLabel = 'Expert', super.key});
+  const ServiceTag(this.code, {this.emptyLabel = 'Prestataire', super.key});
 
   @override
   Widget build(BuildContext context) {
-    final t = TradeStyle.of(trade);
+    final empty = code == null || code!.isEmpty;
+    final t = empty
+        ? const ServiceStyle('', '', Icons.home_repair_service_rounded,
+            AppColors.surfaceSunk, AppColors.inkSoft)
+        : ServiceStyle.of(code);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
@@ -232,12 +269,43 @@ class TradeTag extends StatelessWidget {
       child: Row(mainAxisSize: MainAxisSize.min, children: [
         Icon(t.icon, size: 14, color: t.ink),
         const SizedBox(width: 4),
-        Text(
-          trade == null || trade!.isEmpty ? emptyLabel : t.label,
-          style: AppText.caption.copyWith(
-              color: t.ink, fontWeight: FontWeight.w700, fontSize: 12.5),
+        Flexible(
+          child: Text(
+            empty ? emptyLabel : t.label,
+            overflow: TextOverflow.ellipsis,
+            style: AppText.caption.copyWith(
+                color: t.ink, fontWeight: FontWeight.w700, fontSize: 12.5),
+          ),
         ),
       ]),
+    );
+  }
+}
+
+/// Les services d'un prestataire : jusqu'à [max] étiquettes, puis « +N ».
+class ServiceTags extends StatelessWidget {
+  final List<String> services;
+  final int max;
+  final String emptyLabel;
+  const ServiceTags(this.services,
+      {this.max = 2, this.emptyLabel = 'Prestataire', super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    if (services.isEmpty) return ServiceTag(null, emptyLabel: emptyLabel);
+    final shown = services.take(max).toList();
+    final rest = services.length - shown.length;
+    return Wrap(
+      spacing: 4,
+      runSpacing: 4,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        for (final s in shown) ServiceTag(s),
+        if (rest > 0)
+          Text('+$rest',
+              style: AppText.number
+                  .copyWith(fontSize: 13, color: AppColors.inkMuted)),
+      ],
     );
   }
 }
@@ -548,22 +616,27 @@ class FicheCard extends StatelessWidget {
   }
 }
 
-/// Tuile de choix du métier (copie carbone du métier).
-class TradeChoiceTile extends StatelessWidget {
-  final TradeStyle style;
+/// Tuile de choix d'un service (copie carbone du service).
+class ServiceChoiceTile extends StatelessWidget {
+  final ServiceStyle style;
   final bool selected;
+
+  /// Choix figé (compte certifié) : cadenas au lieu de la coche.
+  final bool locked;
   final VoidCallback onTap;
-  const TradeChoiceTile(
+  const ServiceChoiceTile(
       {super.key,
       required this.style,
       required this.selected,
+      this.locked = false,
       required this.onTap});
 
   @override
   Widget build(BuildContext context) {
     return Semantics(
       selected: selected,
-      button: true,
+      button: !locked,
+      hint: locked ? 'Figé par la certification' : null,
       child: Material(
         color: selected ? style.tint : AppColors.surface,
         shape: RoundedRectangleBorder(
@@ -582,10 +655,14 @@ class TradeChoiceTile extends StatelessWidget {
               const SizedBox(width: AppSpace.sm),
               Expanded(
                 child: Text(style.label,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
                     style: AppText.label
                         .copyWith(color: selected ? style.ink : AppColors.ink)),
               ),
-              if (selected)
+              if (locked)
+                Icon(Icons.lock_outline_rounded, color: style.ink, size: 20)
+              else if (selected)
                 Icon(Icons.check_circle_rounded, color: style.ink, size: 20),
             ]),
           ),
