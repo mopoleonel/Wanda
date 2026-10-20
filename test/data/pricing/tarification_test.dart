@@ -71,7 +71,10 @@ final _cas = [
         formule: Formule.abonnement,
         frequence: Frequence.hebdomadaire,
         reponses: {
-          Q.sacs: 6, Q.passagesSemaine: 2, Q.etage: 3, Q.distanceBac: '50',
+          Q.sacs: 6,
+          Q.passagesSemaine: 2,
+          Q.etage: 3,
+          Q.distanceBac: '50',
         }),
     minutes: 26, mainOeuvre: 520, produits: 0, //
     prixPassage: 1600, passages: 8, prixTotal: 12800,
@@ -79,7 +82,9 @@ final _cas = [
   const _Cas(
     'déchets : un sac au rez-de-chaussée = passage minimum',
     DemandeMenage(service: CategorieService.dechets, reponses: {
-      Q.sacs: 1, Q.etage: 0, Q.distanceBac: '10',
+      Q.sacs: 1,
+      Q.etage: 0,
+      Q.distanceBac: '10',
     }),
     minutes: 15, mainOeuvre: 300, produits: 0, //
     prixPassage: 1300, passages: 1, prixTotal: 1300,
@@ -89,7 +94,11 @@ final _cas = [
     DemandeMenage(
         service: CategorieService.nuisibles,
         produitsFournis: true,
-        reponses: {Q.nuisible: 'punaises', Q.pieces: 3, Q.infestation: 'forte'}),
+        reponses: {
+          Q.nuisible: 'punaises',
+          Q.pieces: 3,
+          Q.infestation: 'forte'
+        }),
     minutes: 60, mainOeuvre: 1200, produits: 18000, //
     prixPassage: 20200, passages: 1, prixTotal: 20200,
   ),
@@ -100,7 +109,11 @@ final _cas = [
         produitsFournis: true,
         formule: Formule.abonnement,
         frequence: Frequence.mensuel,
-        reponses: {Q.nuisible: 'cafards', Q.pieces: 1, Q.infestation: 'faible'}),
+        reponses: {
+          Q.nuisible: 'cafards',
+          Q.pieces: 1,
+          Q.infestation: 'faible'
+        }),
     minutes: 20, mainOeuvre: 400, produits: 1500, //
     prixPassage: 2900, passages: 1, prixTotal: 2900,
   ),
@@ -170,8 +183,8 @@ void main() {
     });
 
     test('abonnement mensuel : un passage par mois', () {
-      final d = DemandeMenage.initiale(_menage).copyWith(
-          formule: Formule.abonnement, frequence: Frequence.mensuel);
+      final d = DemandeMenage.initiale(_menage)
+          .copyWith(formule: Formule.abonnement, frequence: Frequence.mensuel);
       final e = calculerPrix(d);
       expect(e.passages, 1);
       expect(e.prixTotal, e.prixPassage);
@@ -228,8 +241,8 @@ void main() {
       expect(libelles, contains('10 pièces à repasser × 4 min'));
       expect(libelles, contains('Produits apportés'));
       final hebdo = calculerPrix(_cas[2].demande);
-      expect(hebdo.lignes.map((l) => l.libelle),
-          contains('4 passages par mois'));
+      expect(
+          hebdo.lignes.map((l) => l.libelle), contains('4 passages par mois'));
     });
   });
 
@@ -243,8 +256,8 @@ void main() {
     });
 
     test('un abonnement sans rythme est incomplet', () {
-      final d = DemandeMenage.initiale(_menage)
-          .copyWith(formule: Formule.abonnement);
+      final d =
+          DemandeMenage.initiale(_menage).copyWith(formule: Formule.abonnement);
       expect(d.formuleComplete, isFalse);
       expect(d.copyWith(frequence: Frequence.mensuel).formuleComplete, isTrue);
     });

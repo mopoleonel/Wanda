@@ -57,7 +57,9 @@ void main() {
       expect(FicheStatus.sollicitation('en_attente').label, 'REÇU');
       expect(
           FicheStatus.sollicitation('en_attente').ink, AppColors.stampViolet);
-      expect(FicheStatus.sollicitation('accepte').label, 'EN ROUTE');
+      expect(FicheStatus.sollicitation('accepte').label, 'CONFIRMÉ');
+      expect(FicheStatus.sollicitation('refuse').label, 'REFUSÉ');
+      expect(FicheStatus.sollicitation('refuse').ink, AppColors.danger);
       expect(FicheStatus.sollicitation('accepte').ink, AppColors.progress);
       expect(FicheStatus.sollicitation('termine').label, 'TERMINÉ');
       expect(FicheStatus.sollicitation('termine').ink, AppColors.done);
@@ -118,8 +120,8 @@ void main() {
         .pumpWidget(_wrap(StatusStamp(FicheStatus.sollicitation('accepte'))));
     await tester.pumpAndSettle();
 
-    expect(find.text('EN ROUTE'), findsOneWidget);
-    expect(find.bySemanticsLabel('Statut : en route'), findsOneWidget);
+    expect(find.text('CONFIRMÉ'), findsOneWidget);
+    expect(find.bySemanticsLabel('Statut : confirmé'), findsOneWidget);
     handle.dispose();
   });
 

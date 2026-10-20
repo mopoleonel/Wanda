@@ -36,9 +36,13 @@ class FicheStatus {
 
   Color get ink => tone.ink;
 
-  /// Sollicitation citoyen → prestataire.
+  /// Ajustement de prix demandé par le prestataire, en attente du client.
+  static const ajustement = FicheStatus('AJUSTEMENT', StampTone.received);
+
+  /// Demande d'un client à un prestataire.
   factory FicheStatus.sollicitation(String statut) => switch (statut) {
-        'accepte' => const FicheStatus('EN ROUTE', StampTone.progress),
+        'accepte' => const FicheStatus('CONFIRMÉ', StampTone.progress),
+        'refuse' => const FicheStatus('REFUSÉ', StampTone.cancelled),
         'termine' => const FicheStatus('TERMINÉ', StampTone.done),
         'archive' => const FicheStatus('CLASSÉ', StampTone.archived),
         'annule' => const FicheStatus('ANNULÉ', StampTone.cancelled),

@@ -9,6 +9,33 @@ import 'app_logger.dart';
 /// Traduit n'importe quelle erreur (Supabase, réseau, inattendue) en
 /// [AppException] avec un message français adapté à l'utilisateur final,
 /// tout en loggant systématiquement l'erreur technique d'origine.
+/// Refus métier levés par les fonctions SQL (011 et suivantes) : code de
+/// l'exception → message pour l'utilisateur.
+const _messagesSql = {
+  'PRESTATAIRE_INDISPONIBLE':
+      "Ce prestataire n'est plus disponible pour ce service. Choisissez-en un autre.",
+  'PHOTOS_REQUISES': 'Ajoutez au moins une photo (trois au maximum).',
+  'PHOTO_INVALIDE': "Photo non valide : reprenez-la depuis l'application.",
+  'DATE_INVALIDE': "Choisissez une date à partir d'aujourd'hui.",
+  'PROFIL_CITOYEN_INCOMPLET':
+      'Complétez votre profil (nom et téléphone) avant de réserver.',
+  'CITOYEN_INCONNU': 'Complétez votre profil avant de réserver.',
+  'DEMANDE_VIA_SERVEUR': "Le prix d'une demande ne peut pas être modifié.",
+  'PRIX_PROTEGE': "Le prix d'une demande ne peut pas être modifié.",
+  'TRANSITION_INTERDITE':
+      "Cette action n'est plus possible pour cette demande.",
+  'AJUSTEMENT_DEJA_EN_ATTENTE':
+      'Un ajustement attend déjà la réponse du client.',
+  'AJUSTEMENT_IMPOSSIBLE':
+      "Un ajustement n'est possible que sur une mission confirmée.",
+  'AJUSTEMENT_VIDE': 'Indiquez le temps ou les produits en plus.',
+  'DEJA_REPONDU': 'Vous avez déjà répondu à cet ajustement.',
+  'PASSAGE_DEJA_POINTE': "Le passage d'aujourd'hui est déjà pointé.",
+  'PASSAGE_IMPOSSIBLE':
+      'Le pointage est possible seulement sur un abonnement confirmé.',
+  'NON_AUTORISE': 'Action non autorisée.',
+};
+
 AppException mapError(String context, Object error, [StackTrace? stackTrace]) {
   AppLogger.error(context, error, stackTrace);
 
@@ -67,6 +94,11 @@ AppException mapError(String context, Object error, [StackTrace? stackTrace]) {
   }
 
   if (error is PostgrestException) {
+    for (final entry in _messagesSql.entries) {
+      if (error.message.contains(entry.key)) {
+        return AppException(entry.value, cause: error, stackTrace: stackTrace);
+      }
+    }
     if (error.message.contains('IDENTITE_NON_VERIFIEE')) {
       return AppException(
           'Votre identité doit être validée avant de passer en ligne.',

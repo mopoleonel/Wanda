@@ -51,6 +51,25 @@ void main() {
       expect(e.message, contains('momentanément indisponible'));
     });
 
+    test('refus métier SQL traduits (prix protégé, ajustement…)', () {
+      expect(
+          mapError('t', const PostgrestException(message: 'PRIX_PROTEGE'))
+              .message,
+          "Le prix d'une demande ne peut pas être modifié.");
+      expect(
+          mapError(
+                  't',
+                  const PostgrestException(
+                      message: 'AJUSTEMENT_DEJA_EN_ATTENTE'))
+              .message,
+          contains('attend déjà'));
+      expect(
+          mapError('t',
+                  const PostgrestException(message: 'PRESTATAIRE_INDISPONIBLE'))
+              .message,
+          contains("n'est plus disponible"));
+    });
+
     test('PostgrestException -> message générique base de données', () {
       final e = mapError(
           'test', const PostgrestException(message: 'relation does not exist'));

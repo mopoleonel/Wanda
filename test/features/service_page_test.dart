@@ -255,7 +255,7 @@ void main() {
     await _settle(tester);
 
     expect(find.text('N° 004213'), findsOneWidget);
-    expect(find.text('EN ROUTE'), findsOneWidget);
+    expect(find.text('CONFIRMÉ'), findsOneWidget);
     expect(find.textContaining('1 demande en cours'), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
   });

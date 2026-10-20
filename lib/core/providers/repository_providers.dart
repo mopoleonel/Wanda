@@ -3,6 +3,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../data/repositories/auth_repository.dart';
 import '../../data/repositories/avis_repository.dart';
+import '../../data/repositories/demande_repository.dart';
 import '../../data/repositories/notification_repository.dart';
 import '../../data/repositories/prestataire_repository.dart';
 import '../../data/repositories/profile_repository.dart';
@@ -50,6 +51,14 @@ final storageRepositoryProvider = Provider<StorageRepository>((ref) {
 
 final verificationRepositoryProvider = Provider<VerificationRepository>((ref) {
   return VerificationRepository(ref.watch(supabaseClientProvider));
+});
+
+final demandeRepositoryProvider = Provider<DemandeRepository>((ref) {
+  return DemandeRepository(ref.watch(supabaseClientProvider));
+});
+
+final tarifRepositoryProvider = Provider<TarifRepository>((ref) {
+  return TarifRepository(ref.watch(supabaseClientProvider));
 });
 
 final notificationRepositoryProvider = Provider<NotificationRepository>((ref) {

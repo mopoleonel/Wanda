@@ -16,7 +16,9 @@
 
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 
-const GROQ_MODEL = 'meta-llama/llama-4-scout-17b-16e-instruct';
+// llama-4-scout a été arrêté par Groq le 17/07/2026 : modèle de vision
+// actuel, remplaçable sans redéployer via le secret GROQ_VISION_MODEL.
+const GROQ_MODEL = Deno.env.get('GROQ_VISION_MODEL') || 'qwen/qwen3.8-27b';
 
 interface AnalyzeRequest {
   category: string;

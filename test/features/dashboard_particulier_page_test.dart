@@ -139,8 +139,8 @@ void main() {
   testWidgets('Arrivée, profil incomplet : rappel « compléter puis certifier »',
       (tester) async {
     tallScreen(tester);
-    await tester.pumpWidget(
-        _app(_FakeProfiles(_artisan(nom: '', services: const [], photo: null))));
+    await tester.pumpWidget(_app(
+        _FakeProfiles(_artisan(nom: '', services: const [], photo: null))));
     await _settle(tester);
 
     expect(find.text('Complétez votre profil, puis certifiez votre compte'),
@@ -199,7 +199,8 @@ void main() {
     expect(find.text('Faites certifier votre compte'), findsNothing);
 
     await _openProfile(tester);
-    expect(find.textContaining('Compte certifié : nom, prénom'), findsOneWidget);
+    expect(
+        find.textContaining('Compte certifié : nom, prénom'), findsOneWidget);
 
     final fields = tester.widgetList<TextField>(find.byType(TextField)).where(
         (f) => const ['Nom', 'Prénom'].contains(f.decoration?.labelText));
