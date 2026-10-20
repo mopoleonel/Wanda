@@ -257,7 +257,8 @@ class _SignalPageState extends ConsumerState<SignalPage> {
               showBack: !analysing,
               overline: 'Signalement · étape $step sur 3',
               title: _stepTitles[step - 1],
-              bottom: _StepTrack(step: step),
+              bottom: PisteEtapes(
+                  libelles: const ['Type', 'Photo', 'Envoi'], etape: step),
             ),
             Padding(
               padding: const EdgeInsets.fromLTRB(
@@ -510,48 +511,6 @@ class _SignalPageState extends ConsumerState<SignalPage> {
         Text('Gardez l\'application ouverte quelques secondes.',
             style: AppText.caption),
       ],
-    );
-  }
-}
-
-/// Piste des 3 étapes dans l'en-tête.
-class _StepTrack extends StatelessWidget {
-  final int step;
-  const _StepTrack({required this.step});
-
-  @override
-  Widget build(BuildContext context) {
-    const labels = ['Type', 'Photo', 'Envoi'];
-    return Row(
-      children: List.generate(3, (i) {
-        final active = step >= i + 1;
-        return Expanded(
-          child: Padding(
-            padding: EdgeInsets.only(right: i < 2 ? AppSpace.sm : 0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                AnimatedContainer(
-                  duration: const Duration(milliseconds: 260),
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: active
-                        ? AppColors.brandLeaf
-                        : Colors.white.withValues(alpha: 0.22),
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Text(labels[i],
-                    style: AppText.caption.copyWith(
-                        color: active
-                            ? Colors.white
-                            : AppColors.onLetterheadSoft)),
-              ],
-            ),
-          ),
-        );
-      }),
     );
   }
 }

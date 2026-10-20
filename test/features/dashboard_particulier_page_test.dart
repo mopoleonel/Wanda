@@ -10,7 +10,10 @@ import 'package:wanda/data/models/particulier.dart';
 import 'package:wanda/data/models/sollicitation.dart';
 import 'package:wanda/data/models/verification_identite.dart';
 import 'package:wanda/data/repositories/auth_repository.dart';
+import 'package:wanda/data/models/ajustement.dart';
 import 'package:wanda/data/repositories/avis_repository.dart';
+import 'package:wanda/data/pricing/tarification.dart';
+import 'package:wanda/data/repositories/demande_repository.dart';
 import 'package:wanda/data/repositories/prestataire_repository.dart';
 import 'package:wanda/data/repositories/profile_repository.dart';
 import 'package:wanda/data/repositories/sollicitation_repository.dart';
@@ -59,13 +62,45 @@ class _FakeVerifications extends Fake implements VerificationRepository {
 }
 
 class _FakeSollicitations extends Fake implements SollicitationRepository {
+  List<Sollicitation> missions = const [];
   @override
   Future<List<Sollicitation>> fetchForPrestataire(String prestataireId,
           {int page = 0, int pageSize = 30}) async =>
-      const [];
+      missions;
 }
 
 class _FakePrestataires extends Fake implements PrestataireRepository {}
+
+class _FakeDemandes extends Fake implements DemandeRepository {
+  final refus = <String, String?>{};
+  final ajustementsEnvoyes = <Map<String, Object>>[];
+
+  @override
+  Future<List<Ajustement>> ajustements(List<String> ids) async => const [];
+
+  @override
+  Future<void> refuser(String id, {String? motif}) async => refus[id] = motif;
+
+  @override
+  Future<void> demanderAjustement({
+    required String sollicitationId,
+    required int minutes,
+    required int produits,
+    required String motif,
+    List<String> photos = const [],
+  }) async =>
+      ajustementsEnvoyes.add({
+        'id': sollicitationId,
+        'minutes': minutes,
+        'produits': produits,
+        'motif': motif,
+      });
+}
+
+class _FakeTarifs extends Fake implements TarifRepository {
+  @override
+  Future<Tarifs> charger() async => Tarifs.defaut;
+}
 
 Particulier _artisan({
   String nom = 'Kamga',
@@ -90,6 +125,9 @@ Particulier _artisan({
 const _enAttente =
     VerificationIdentite(id: 'v1', statut: VerificationStatut.enAttente);
 
+final _sollicitations = _FakeSollicitations();
+var _demandes = _FakeDemandes();
+
 Widget _app(_FakeProfiles profiles, {VerificationIdentite? verification}) {
   final router = GoRouter(
     initialLocation: AppRoutes.dashboardParticulier,
@@ -109,8 +147,10 @@ Widget _app(_FakeProfiles profiles, {VerificationIdentite? verification}) {
       avisRepositoryProvider.overrideWithValue(_FakeAvis()),
       verificationRepositoryProvider
           .overrideWithValue(_FakeVerifications(verification)),
-      sollicitationRepositoryProvider.overrideWithValue(_FakeSollicitations()),
+      sollicitationRepositoryProvider.overrideWithValue(_sollicitations),
       prestataireRepositoryProvider.overrideWithValue(_FakePrestataires()),
+      demandeRepositoryProvider.overrideWithValue(_demandes),
+      tarifRepositoryProvider.overrideWithValue(_FakeTarifs()),
     ],
     child: MaterialApp.router(theme: AppTheme.light, routerConfig: router),
   );
@@ -259,5 +299,129 @@ void main() {
     expect(profiles.updates, 1);
     expect(profiles.savedServices, ['nuisibles']);
     await tester.pumpWidget(const SizedBox());
+  });
+
+  group('Missions de services ménagers', () {
+    final enAttente = Sollicitation.fromMap({
+      'id': '512',
+      'prestataire_id': 'u1',
+      'citoyen_id': 'c1',
+      'nom_citoyen': 'Mbarga',
+      'prenom_citoyen': 'Lucie',
+      'numero_citoyen': '+237677000000',
+      'statut': 'en_attente',
+      'date_sollicitation': DateTime.now().toIso8601String(),
+      'service': 'menage',
+      'formule': 'ponctuelle',
+      'reponses': {
+        'chambres': 2, 'salons': 1, 'cuisines': 1, 'douche_wc': 1, //
+        'vitres': true, 'etat': 'sale',
+      },
+      'minutes_estimees': 263,
+      'prix_passage': 6300,
+      'prix_total': 6300,
+      'ia_analyse': {
+        'photos_conformes': true,
+        'estimation': {'niveau': 'tres_sale'},
+        'confiance': 0.8,
+        'incoherences': ['Le salon paraît très sale'],
+      },
+      'date_souhaitee': '2026-10-22',
+      'creneau': 'matin',
+    });
+    final confirmee = Sollicitation.fromMap({
+      ...{
+        'id': '513',
+        'prestataire_id': 'u1',
+        'citoyen_id': 'c1',
+        'nom_citoyen': 'Mbarga',
+        'numero_citoyen': '+237677000000',
+        'statut': 'accepte',
+        'service': 'linge',
+        'formule': 'abonnement',
+        'frequence': 'hebdomadaire',
+        'reponses': {'paniers': 2},
+        'prix_passage': 4000,
+        'prix_total': 16000,
+      },
+    });
+
+    setUp(() {
+      _demandes = _FakeDemandes();
+      _sollicitations.missions = [enAttente, confirmee];
+    });
+    tearDown(() => _sollicitations.missions = const []);
+
+    Future<void> ouvrirMissions(WidgetTester tester) async {
+      tallScreen(tester);
+      await tester.pumpWidget(_app(_FakeProfiles(_artisan(certifie: true))));
+      await _settle(tester);
+      await tester.tap(find.text('Missions'));
+      await _settle(tester);
+    }
+
+    testWidgets('La demande se lit avant de répondre : réponses, IA, prix',
+        (tester) async {
+      await ouvrirMissions(tester);
+      expect(find.text('Voir la demande et répondre'), findsOneWidget);
+      expect(find.text(fcfa(6300)), findsOneWidget);
+
+      await tester.tap(find.text('Voir la demande et répondre'));
+      await _settle(tester);
+      expect(find.text('2 chambres, 1 salon, 1 cuisine, 1 douche / WC'),
+          findsOneWidget);
+      expect(find.text('En plus : vitres'), findsOneWidget);
+      expect(find.text('Estimation IA : tres sale'), findsOneWidget);
+      expect(find.text('• Le salon paraît très sale'), findsOneWidget);
+      expect(find.text('Accepter (${fcfa(6300)}) et appeler'), findsOneWidget);
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('Refuser : motif facultatif transmis', (tester) async {
+      await ouvrirMissions(tester);
+      await tester.tap(find.text('Voir la demande et répondre'));
+      await _settle(tester);
+      await tester.tap(find.widgetWithText(OutlinedButton, 'Refuser'));
+      await _settle(tester);
+      await tester.enterText(find.byType(TextField).last, 'Pas dispo jeudi');
+      await tester.tap(find.widgetWithText(FilledButton, 'Refuser'));
+      await _settle(tester);
+      expect(_demandes.refus, {'512': 'Pas dispo jeudi'});
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('Mission confirmée : ajustement chiffré puis envoyé',
+        (tester) async {
+      await ouvrirMissions(tester);
+      await tester.tap(find.text('En cours (1)'));
+      await _settle(tester);
+      expect(find.text('Pointer'), findsOneWidget,
+          reason: 'abonnement : pointage des passages');
+      await tester.tap(find.text('Ajustement'));
+      await _settle(tester);
+
+      // 30 min par défaut = 600 FCFA ; +15 min = 45 min = 900 FCFA.
+      expect(find.text('Envoyer au client : +${fcfa(600)}'), findsOneWidget);
+      await tester.tap(find.byTooltip('Plus').first);
+      await tester.pump();
+      expect(find.text('Envoyer au client : +${fcfa(900)}'), findsOneWidget);
+
+      // Motif obligatoire.
+      await tester.tap(find.text('Envoyer au client : +${fcfa(900)}'));
+      await _settle(tester);
+      expect(_demandes.ajustementsEnvoyes, isEmpty);
+
+      await tester.enterText(
+          find.widgetWithText(TextField, 'Pourquoi ?'), 'Deux paniers de plus');
+      await tester.tap(find.text('Envoyer au client : +${fcfa(900)}'));
+      await _settle(tester);
+      expect(_demandes.ajustementsEnvoyes.single, {
+        'id': '513',
+        'minutes': 45,
+        'produits': 0,
+        'motif': 'Deux paniers de plus',
+      });
+      await tester.pumpWidget(const SizedBox());
+    });
   });
 }

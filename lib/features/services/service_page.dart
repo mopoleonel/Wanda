@@ -27,10 +27,15 @@ import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_snackbar.dart';
 import '../../core/widgets/bordereau.dart';
 import '../../core/widgets/status_views.dart';
+import '../../data/models/ajustement.dart';
 import '../../data/models/avis_prestataire.dart';
+import '../../data/models/categorie_service.dart';
 import '../../data/models/citoyen.dart';
+import '../../data/models/demande_menage.dart';
 import '../../data/models/particulier.dart';
 import '../../data/models/sollicitation.dart';
+import '../../data/pricing/tarification.dart';
+import '../demande/demande_page.dart';
 import 'prestataire_marker_factory.dart';
 
 class ServicePage extends ConsumerStatefulWidget {
@@ -77,6 +82,12 @@ class _ServicePageState extends ConsumerState<ServicePage> {
   StreamSubscription<List<Sollicitation>>? _ordersSub;
   List<Sollicitation>? _orders;
   bool _ordersError = false;
+
+  /// Ajustement en attente de réponse, par demande.
+  Map<String, Ajustement> _ajustements = const {};
+
+  /// Passages pointés, par abonnement confirmé.
+  Map<String, int> _passages = const {};
 
   @override
   void initState() {
@@ -457,12 +468,74 @@ class _ServicePageState extends ConsumerState<ServicePage> {
             _orders = orders;
             _ordersError = false;
           });
+          _chargerSuivi(orders);
         }
       },
       onError: (Object _) {
         if (mounted) setState(() => _ordersError = true);
       },
     );
+  }
+
+  /// Ajustements en attente et passages d'abonnement des demandes en cours.
+  Future<void> _chargerSuivi(List<Sollicitation> orders) async {
+    final repo = ref.read(demandeRepositoryProvider);
+    final confirmees = orders
+        .where((o) => o.estDemandeMenage && o.statut == 'accepte')
+        .toList();
+    try {
+      final ajustements =
+          await repo.ajustements([for (final o in confirmees) o.id]);
+      final passages = <String, int>{};
+      for (final o
+          in confirmees.where((o) => o.formule == Formule.abonnement)) {
+        passages[o.id] = (await repo.passages(o.id)).length;
+      }
+      if (!mounted) return;
+      setState(() {
+        _ajustements = {
+          for (final a in ajustements.where((a) => a.enAttente))
+            a.sollicitationId: a,
+        };
+        _passages = passages;
+      });
+    } on AppException catch (_) {
+      // Le suivi détaillé reste à jour au prochain rafraîchissement.
+    }
+  }
+
+  Future<void> _repondreAjustement(Ajustement a, bool accepte) async {
+    try {
+      await ref
+          .read(demandeRepositoryProvider)
+          .repondreAjustement(a.id, accepte: accepte);
+      if (!mounted) return;
+      showAppSnackBar(
+          context,
+          accepte
+              ? 'Ajustement accepté : +${fcfa(a.prixSupp)}.'
+              : 'Ajustement refusé : le prix initial reste dû.',
+          isError: false);
+      setState(
+          () => _ajustements = {..._ajustements}..remove(a.sollicitationId));
+    } on AppException catch (e) {
+      _showErrorSnackBar(e.message);
+    }
+  }
+
+  /// Ouvre la réservation ; revient sur « Mes demandes » une fois envoyée.
+  Future<void> _reserver(DemandeArgs args) async {
+    final envoyee =
+        await context.push<bool>(AppRoutes.citoyenDemande, extra: args);
+    if (envoyee == true && mounted) setState(() => _selectedIndex = 1);
+  }
+
+  /// Demande refusée : mêmes réponses et photos, autre prestataire.
+  void _reprendre(Sollicitation o) {
+    final d = o.demande;
+    if (d == null) return;
+    _reserver(DemandeArgs(d.service,
+        reprise: d, photosEnvoyees: o.photos, analyseId: null));
   }
 
   // ================= UTILS =================
@@ -474,6 +547,7 @@ class _ServicePageState extends ConsumerState<ServicePage> {
         return "Terminée à ${DateFormat('HH:mm').format(order.dateFin!.toLocal())}";
       }
       if (order.statut == 'accepte') return 'Prestataire confirmé';
+      if (order.statut == 'refuse') return 'Prestataire indisponible';
       if (order.statut == 'annule') return 'Demande annulée';
       if (order.dateSollicitation == null) return 'Envoyée';
       return 'Envoyée ${sinceLabel(order.dateSollicitation!)}';
@@ -506,36 +580,6 @@ class _ServicePageState extends ConsumerState<ServicePage> {
   }
 
   // ================= ACTIONS & SÉCURITÉ =================
-
-  Future<void> _solicit(Particulier p) async {
-    if (_nomController.text.isEmpty || _phoneController.text.isEmpty) {
-      Navigator.pop(context);
-      _showErrorSnackBar(
-          "Complétez votre profil (Nom et Tel) avant de commander");
-      setState(() => _selectedIndex = 2);
-      return;
-    }
-
-    final userId = ref.read(authRepositoryProvider).currentUserId;
-    if (userId == null) return;
-
-    try {
-      await ref.read(sollicitationRepositoryProvider).create(
-            prestataireId: p.id,
-            citoyenId: userId,
-            nomCitoyen: _nomController.text.trim(),
-            prenomCitoyen: _prenomController.text.trim(),
-            numeroCitoyen: _phoneController.text.trim(),
-          );
-      if (!mounted) return;
-      Navigator.pop(context);
-      setState(() => _selectedIndex = 1);
-    } on AppException catch (e) {
-      if (!mounted) return;
-      Navigator.pop(context);
-      _showErrorSnackBar(e.message);
-    }
-  }
 
   Future<void> _archiveOrder(String id) async {
     try {
@@ -630,8 +674,9 @@ class _ServicePageState extends ConsumerState<ServicePage> {
         physics: const AlwaysScrollableScrollPhysics(),
         slivers: [
           SliverToBoxAdapter(child: _buildHeader(all.length, isLoading)),
-          SliverToBoxAdapter(child: _buildTradeTabs()),
+          SliverToBoxAdapter(child: _buildServicesEntry()),
           SliverToBoxAdapter(child: _buildReportEntry()),
+          SliverToBoxAdapter(child: _buildTradeTabs()),
           if (_locationOff) SliverToBoxAdapter(child: _buildLocationBanner()),
           if (!isLoading && !hasError && topRated.length >= 2) ...[
             const SliverToBoxAdapter(child: SectionTitle('Les mieux notés')),
@@ -799,8 +844,46 @@ class _ServicePageState extends ConsumerState<ServicePage> {
     );
   }
 
-  /// Accès direct au signalement d'incident, juste sous les services :
-  /// visible dès l'arrivée, sans passer devant la recherche d'artisan.
+  /// Les 4 services, en grandes tuiles : le geste principal de l'espace.
+  Widget _buildServicesEntry() {
+    final tuiles = [
+      for (final c in CategorieService.values)
+        _ServiceTile(
+          categorie: c,
+          onTap: () => _reserver(DemandeArgs(c)),
+        ),
+    ];
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+          AppSpace.gutter, AppSpace.lg, AppSpace.gutter, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text('Réserver un service', style: AppText.sectionTitle),
+          const SizedBox(height: 2),
+          Text('Prix fixé par WANDA, affiché avant de réserver.',
+              style: AppText.caption),
+          const SizedBox(height: AppSpace.md),
+          for (var i = 0; i < tuiles.length; i += 2) ...[
+            if (i > 0) const SizedBox(height: AppSpace.sm),
+            IntrinsicHeight(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Expanded(child: tuiles[i]),
+                  const SizedBox(width: AppSpace.sm),
+                  Expanded(child: tuiles[i + 1]),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  /// Accès direct au signalement d'incident (service public gratuit, à ne
+  /// pas confondre avec le ramassage de poubelles à domicile).
   Widget _buildReportEntry() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(
@@ -809,32 +892,32 @@ class _ServicePageState extends ConsumerState<ServicePage> {
         button: true,
         child: FicheCard(
           onTap: () => context.push(AppRoutes.citoyenSignal),
-          color: const Color(0xFFFFF8DC),
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           child: Row(children: [
             Container(
               width: 40,
               height: 40,
               decoration: BoxDecoration(
-                color: const Color(0xFFF7E9A6),
+                color: AppColors.greenTint,
                 borderRadius: BorderRadius.circular(10),
               ),
               child: const Icon(Icons.campaign_rounded,
-                  color: Color(0xFF6E5400), size: 22),
+                  color: AppColors.letterheadDeep, size: 22),
             ),
             const SizedBox(width: AppSpace.md),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Un problème dans votre quartier ?',
-                      style: AppText.caption),
                   Text('Signaler un incident',
                       style: AppText.cardTitle.copyWith(fontSize: 15)),
+                  Text('Gratuit : dépôt sauvage, fuite, panne dans le quartier',
+                      style: AppText.caption),
                 ],
               ),
             ),
-            const Icon(Icons.chevron_right_rounded, color: Color(0xFF6E5400)),
+            const Icon(Icons.chevron_right_rounded,
+                color: AppColors.letterheadDeep),
           ]),
         ),
       ),
@@ -1040,6 +1123,10 @@ class _ServicePageState extends ConsumerState<ServicePage> {
                   final o = orders[i];
                   return _OrderFiche(
                     order: o,
+                    ajustement: _ajustements[o.id],
+                    passages: _passages[o.id],
+                    onRepondre: _repondreAjustement,
+                    onReprendre: () => _reprendre(o),
                     timerLabel: _getTimerOrEnd(o),
                     canCancel: _canCancel(o.dateSollicitation),
                     onCall: () => _call(o.expert?.telephone),
@@ -1237,17 +1324,30 @@ class _ServicePageState extends ConsumerState<ServicePage> {
                   iconColor: AppColors.done, iconSize: 10),
               if (distance != null)
                 _detailLine(Icons.near_me_rounded, 'À $distance de vous'),
-              _detailLine(Icons.receipt_long_rounded,
-                  'Votre demande recevra un numéro de fiche à suivre dans « Mes demandes ».'),
+              _detailLine(Icons.sell_outlined,
+                  'Prix fixé par WANDA selon votre demande, affiché avant de réserver.'),
               const SizedBox(height: AppSpace.lg),
-              FilledButton.icon(
-                onPressed: () => _solicit(p),
-                style: FilledButton.styleFrom(
-                    minimumSize: const Size(double.infinity, 56)),
-                icon: const Icon(Icons.send_rounded, size: 20),
-                label: Text(
-                    'Solliciter ${p.prenom.isNotEmpty ? p.prenom : 'ce prestataire'}'),
-              ),
+              if (p.services.length > 1) ...[
+                Text('Quel service ?', style: AppText.label),
+                const SizedBox(height: AppSpace.sm),
+              ],
+              for (final code in p.services)
+                if (CategorieService.fromCode(code) case final c?)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: AppSpace.sm),
+                    child: FilledButton.icon(
+                      onPressed: () {
+                        Navigator.pop(sheetContext);
+                        _reserver(DemandeArgs(c, prestataire: p));
+                      },
+                      style: FilledButton.styleFrom(
+                          minimumSize: const Size(double.infinity, 54)),
+                      icon: Icon(ServiceStyle.ofCategorie(c).icon, size: 20),
+                      label: Text(p.services.length > 1
+                          ? 'Réserver : ${c.court}'
+                          : 'Réserver ${p.prenom.isNotEmpty ? p.prenom : 'ce prestataire'}'),
+                    ),
+                  ),
             ],
           ),
         ),
@@ -1642,6 +1742,10 @@ class _TopRatedFiche extends StatelessWidget {
 /// Fiche de demande : numéro, date, tampon de statut, expert, actions.
 class _OrderFiche extends StatelessWidget {
   final Sollicitation order;
+  final Ajustement? ajustement;
+  final int? passages;
+  final void Function(Ajustement, bool) onRepondre;
+  final VoidCallback onReprendre;
   final String timerLabel;
   final bool canCancel;
   final VoidCallback onCall;
@@ -1652,6 +1756,10 @@ class _OrderFiche extends StatelessWidget {
 
   const _OrderFiche({
     required this.order,
+    required this.ajustement,
+    required this.passages,
+    required this.onRepondre,
+    required this.onReprendre,
     required this.timerLabel,
     required this.canCancel,
     required this.onCall,
@@ -1667,9 +1775,13 @@ class _OrderFiche extends StatelessWidget {
     final status = order.statut;
     final isAccepted = status == 'accepte';
     final isDone = status == 'termine';
-    final isFinal = status == 'archive' || status == 'annule';
+    final isRefused = status == 'refuse';
+    final isFinal = status == 'archive' || status == 'annule' || isRefused;
     final date = order.dateSollicitation;
-    final trade = ServiceStyle.ofServices(expert?.services ?? const []);
+    final trade = order.service != null
+        ? ServiceStyle.ofCategorie(order.service!)
+        : ServiceStyle.ofServices(expert?.services ?? const []);
+    final aj = ajustement;
 
     return FicheCard(
       color: isFinal ? AppColors.paper : null,
@@ -1685,9 +1797,16 @@ class _OrderFiche extends StatelessWidget {
                   style: AppText.caption),
             ],
             const Spacer(),
-            StatusStamp(FicheStatus.sollicitation(status)),
+            StatusStamp(aj != null
+                ? FicheStatus.ajustement
+                : FicheStatus.sollicitation(status)),
           ]),
         ),
+        if (order.estDemandeMenage)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+            child: _ResumeDemande(order: order, passages: passages),
+          ),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 14, 8, 14),
           child: Row(children: [
@@ -1729,6 +1848,31 @@ class _OrderFiche extends StatelessWidget {
               ),
           ]),
         ),
+        if (aj != null)
+          _BandeauAjustement(ajustement: aj, onRepondre: onRepondre),
+        if (isRefused && order.estDemandeMenage) ...[
+          const Divider(),
+          Padding(
+            padding: const EdgeInsets.all(AppSpace.md),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if ((order.motifRefus ?? '').isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: AppSpace.sm),
+                    child: Text('« ${order.motifRefus} »',
+                        style: AppText.body.copyWith(color: AppColors.inkSoft)),
+                  ),
+                FilledButton.icon(
+                  onPressed: onReprendre,
+                  style: FilledButton.styleFrom(minimumSize: const Size(0, 48)),
+                  icon: const Icon(Icons.person_search_rounded, size: 20),
+                  label: const Text('Choisir un autre prestataire'),
+                ),
+              ],
+            ),
+          ),
+        ],
         if (!isFinal) ...[
           const Divider(),
           Padding(
@@ -1827,6 +1971,159 @@ class _MapProviderCard extends StatelessWidget {
             ),
           ],
         ]),
+      ),
+    );
+  }
+}
+
+/// Tuile de réservation d'un service (copie carbone).
+class _ServiceTile extends StatelessWidget {
+  final CategorieService categorie;
+  final VoidCallback onTap;
+  const _ServiceTile({required this.categorie, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final style = ServiceStyle.ofCategorie(categorie);
+    return Semantics(
+      button: true,
+      label: 'Réserver : ${categorie.libelle}',
+      excludeSemantics: true,
+      child: Material(
+        color: style.tint,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppRadius.card),
+          side: BorderSide(color: style.ink.withValues(alpha: 0.25)),
+        ),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(AppRadius.card),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: 112),
+            child: Padding(
+              padding: const EdgeInsets.all(AppSpace.md),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Icon(style.icon, color: style.ink, size: 28),
+                  const SizedBox(height: AppSpace.md),
+                  Text(categorie.libelle,
+                      style: AppText.cardTitle.copyWith(color: style.ink)),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Service, formule, date et prix d'une demande ménagère.
+class _ResumeDemande extends StatelessWidget {
+  final Sollicitation order;
+  final int? passages;
+  const _ResumeDemande({required this.order, this.passages});
+
+  @override
+  Widget build(BuildContext context) {
+    const jours = ['lun.', 'mar.', 'mer.', 'jeu.', 'ven.', 'sam.', 'dim.'];
+    final d = order.dateSouhaitee;
+    final quand = d == null
+        ? null
+        : '${jours[d.weekday - 1]} ${d.day}/${d.month.toString().padLeft(2, '0')}'
+            '${order.creneau != null ? ', ${order.creneau!.libelle.toLowerCase()}' : ''}';
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              ServiceTag(order.service?.code),
+              const SizedBox(height: 4),
+              Text(
+                  [
+                    order.demande?.libelleFormule,
+                    if (quand != null) 'Prévu $quand',
+                    if (passages != null)
+                      '$passages passage${passages! > 1 ? 's' : ''} effectué${passages! > 1 ? 's' : ''}',
+                  ].whereType<String>().join(' · '),
+                  style: AppText.caption),
+            ],
+          ),
+        ),
+        if (order.prixTotal != null)
+          Text(fcfa(order.prixTotal!),
+              style: AppText.number.copyWith(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.ink)),
+      ],
+    );
+  }
+}
+
+/// Le prestataire demande un ajustement : le client accepte ou refuse.
+class _BandeauAjustement extends StatelessWidget {
+  final Ajustement ajustement;
+  final void Function(Ajustement, bool) onRepondre;
+  const _BandeauAjustement(
+      {required this.ajustement, required this.onRepondre});
+
+  @override
+  Widget build(BuildContext context) {
+    final a = ajustement;
+    final quoi = [
+      if (a.minutesSupp > 0) '+${duree(a.minutesSupp)} de travail',
+      if (a.produitsSupp > 0) '+${fcfa(a.produitsSupp)} de produits',
+    ].join(', ');
+    return Container(
+      margin:
+          const EdgeInsets.fromLTRB(AppSpace.md, 0, AppSpace.md, AppSpace.md),
+      padding: const EdgeInsets.all(AppSpace.md),
+      decoration: BoxDecoration(
+        color: AppColors.stampVioletTint,
+        borderRadius: BorderRadius.circular(AppRadius.field),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(children: [
+            Expanded(
+              child: Text('Ajustement demandé',
+                  style:
+                      AppText.cardTitle.copyWith(color: AppColors.stampViolet)),
+            ),
+            Text('+${fcfa(a.prixSupp)}',
+                style: AppText.number.copyWith(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.stampViolet)),
+          ]),
+          const SizedBox(height: 4),
+          Text(quoi, style: AppText.bodyStrong),
+          Text('« ${a.motif} »', style: AppText.body),
+          const SizedBox(height: AppSpace.md),
+          Row(children: [
+            Expanded(
+              child: OutlinedButton(
+                onPressed: () => onRepondre(a, false),
+                style: OutlinedButton.styleFrom(minimumSize: const Size(0, 48)),
+                child: const Text('Refuser'),
+              ),
+            ),
+            const SizedBox(width: AppSpace.md),
+            Expanded(
+              child: FilledButton(
+                onPressed: () => onRepondre(a, true),
+                style: FilledButton.styleFrom(minimumSize: const Size(0, 48)),
+                child: const Text('Accepter'),
+              ),
+            ),
+          ]),
+        ],
       ),
     );
   }

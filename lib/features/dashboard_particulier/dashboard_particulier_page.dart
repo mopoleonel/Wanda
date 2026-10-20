@@ -33,11 +33,15 @@ import '../../core/widgets/app_snackbar.dart';
 import '../../core/widgets/bordereau.dart';
 import '../../core/widgets/city_backdrop.dart';
 import '../../core/widgets/status_views.dart';
+import '../../data/models/ajustement.dart';
 import '../../data/models/avis_prestataire.dart';
 import '../../data/models/categorie_service.dart';
+import '../../data/models/demande_menage.dart';
+import '../../data/pricing/tarification.dart';
 import '../../data/models/particulier.dart';
 import '../../data/models/sollicitation.dart';
 import '../../data/models/verification_identite.dart';
+import 'mission_detail.dart';
 
 class DashboardParticulierPage extends ConsumerStatefulWidget {
   const DashboardParticulierPage({super.key});
@@ -103,6 +107,9 @@ class _DashboardParticulierPageState
 
   List<Sollicitation> sollicitations = [];
   List<FlSpot> graphSpots = [];
+
+  /// Ajustement en attente de réponse du client, par mission.
+  Map<String, Ajustement> _ajustements = const {};
 
   final TextEditingController _nomController = TextEditingController();
   final TextEditingController _prenomController = TextEditingController();
@@ -213,9 +220,109 @@ class _DashboardParticulierPageState
           sollicitations = rows;
           _generateGraphSpots();
         });
+        _chargerAjustements(rows);
       }
     } on AppException catch (_) {
       // Le tableau reste simplement vide ; pas bloquant pour le reste du dashboard.
+    }
+  }
+
+  Future<void> _chargerAjustements(List<Sollicitation> rows) async {
+    final confirmees = [
+      for (final r in rows)
+        if (r.statut == 'accepte' && r.estDemandeMenage) r.id,
+    ];
+    try {
+      final liste =
+          await ref.read(demandeRepositoryProvider).ajustements(confirmees);
+      if (mounted) {
+        setState(() => _ajustements = {
+              for (final a in liste.where((a) => a.enAttente))
+                a.sollicitationId: a,
+            });
+      }
+    } on AppException catch (_) {
+      // Indication secondaire : réessayée au prochain rafraîchissement.
+    }
+  }
+
+  /// Détail complet avant de répondre (réponses, photos, analyse IA, prix).
+  void _ouvrirDetail(Sollicitation item) {
+    final enAttente = item.statut == 'en_attente';
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (sheetContext) => DetailMission(
+        mission: item,
+        actions: [
+          if (enAttente) ...[
+            FilledButton.icon(
+              onPressed: () {
+                Navigator.pop(sheetContext);
+                _updateMissionStatus(item.id, 'accepte',
+                    phone: item.numeroCitoyen);
+              },
+              style: FilledButton.styleFrom(
+                  minimumSize: const Size(double.infinity, 54)),
+              icon: const Icon(Icons.check_rounded, size: 20),
+              label: Text(item.prixTotal != null
+                  ? 'Accepter (${fcfa(item.prixTotal!)}) et appeler'
+                  : 'Accepter et appeler'),
+            ),
+            const SizedBox(height: AppSpace.sm),
+            OutlinedButton(
+              onPressed: () {
+                Navigator.pop(sheetContext);
+                _refuser(item);
+              },
+              style: OutlinedButton.styleFrom(
+                  minimumSize: const Size(double.infinity, 50),
+                  foregroundColor: AppColors.danger),
+              child: const Text('Refuser'),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Future<void> _refuser(Sollicitation item) async {
+    // null : annulé ; chaîne (éventuellement vide) : refus confirmé.
+    final texte = await showDialog<String>(
+      context: context,
+      builder: (_) => const _DialogueRefus(),
+    );
+    if (texte == null) return;
+    try {
+      await ref.read(demandeRepositoryProvider).refuser(item.id, motif: texte);
+      _showSnackBar('Demande refusée.', isError: false);
+      _fetchSollicitations();
+    } on AppException catch (e) {
+      _showSnackBar(e.message);
+    }
+  }
+
+  Future<void> _demanderAjustement(Sollicitation item) async {
+    final envoye = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (_) => FormulaireAjustement(mission: item),
+    );
+    if (envoye == true) {
+      _showSnackBar('Ajustement envoyé : le client va répondre.',
+          isError: false);
+      _fetchSollicitations();
+    }
+  }
+
+  Future<void> _pointerPassage(Sollicitation item) async {
+    try {
+      await ref.read(demandeRepositoryProvider).pointerPassage(item.id);
+      _showSnackBar('Passage pointé : le client est prévenu.', isError: false);
+    } on AppException catch (e) {
+      _showSnackBar(e.message);
     }
   }
 
@@ -693,12 +800,16 @@ class _DashboardParticulierPageState
                     child: _MissionFiche(
                       item: pending.first,
                       timeLabel: _getTimeDisplay(pending.first),
+                      ajustement: null,
+                      onOpen: () => _ouvrirDetail(pending.first),
                       onAccept: () => _updateMissionStatus(
                           pending.first.id, 'accepte',
                           phone: pending.first.numeroCitoyen),
                       onFinish: () =>
                           _updateMissionStatus(pending.first.id, 'termine'),
                       onCall: () => _callClient(pending.first.numeroCitoyen),
+                      onAjustement: () => _demanderAjustement(pending.first),
+                      onPassage: () => _pointerPassage(pending.first),
                     ),
                   ),
                 ],
@@ -999,7 +1110,7 @@ class _DashboardParticulierPageState
     const empties = [
       (
         'Aucune demande à traiter',
-        'Les nouvelles demandes des citoyens arrivent ici.'
+        'Les nouvelles demandes des clients arrivent ici.'
       ),
       ('Aucune mission en cours', 'Acceptez une demande pour la voir ici.'),
       (
@@ -1064,10 +1175,14 @@ class _DashboardParticulierPageState
                   _MissionFiche(
                     item: item,
                     timeLabel: _getTimeDisplay(item),
+                    ajustement: _ajustements[item.id],
+                    onOpen: () => _ouvrirDetail(item),
                     onAccept: () => _updateMissionStatus(item.id, 'accepte',
                         phone: item.numeroCitoyen),
                     onFinish: () => _updateMissionStatus(item.id, 'termine'),
                     onCall: () => _callClient(item.numeroCitoyen),
+                    onAjustement: () => _demanderAjustement(item),
+                    onPassage: () => _pointerPassage(item),
                   ),
                   const SizedBox(height: AppSpace.md),
                 ],
@@ -1410,16 +1525,24 @@ class _DashboardParticulierPageState
 class _MissionFiche extends StatelessWidget {
   final Sollicitation item;
   final String timeLabel;
+  final Ajustement? ajustement;
+  final VoidCallback onOpen;
   final VoidCallback onAccept;
   final VoidCallback onFinish;
   final VoidCallback onCall;
+  final VoidCallback onAjustement;
+  final VoidCallback onPassage;
 
   const _MissionFiche({
     required this.item,
     required this.timeLabel,
+    required this.ajustement,
+    required this.onOpen,
     required this.onAccept,
     required this.onFinish,
     required this.onCall,
+    required this.onAjustement,
+    required this.onPassage,
   });
 
   @override
@@ -1427,9 +1550,12 @@ class _MissionFiche extends StatelessWidget {
     final status = item.statut;
     final client = '${item.prenomCitoyen ?? ''} ${item.nomCitoyen}'.trim();
     final isFinal = status != 'en_attente' && status != 'accepte';
+    final menage = item.estDemandeMenage;
+    final quand = quandDemande(item);
     return FicheCard(
       color: isFinal ? AppColors.paper : null,
       padding: EdgeInsets.zero,
+      onTap: menage ? onOpen : null,
       child: Column(children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 14, 14, 0),
@@ -1442,9 +1568,43 @@ class _MissionFiche extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis),
             ),
-            StatusStamp(FicheStatus.sollicitation(status)),
+            StatusStamp(ajustement != null
+                ? FicheStatus.ajustement
+                : FicheStatus.sollicitation(status)),
           ]),
         ),
+        if (menage)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      ServiceTag(item.service?.code),
+                      const SizedBox(height: 4),
+                      Text(
+                          [
+                            item.demande?.libelleFormule,
+                            if (quand.isNotEmpty) 'Prévu $quand',
+                            if (item.minutesEstimees != null)
+                              '≈ ${duree(item.minutesEstimees!)}',
+                          ].whereType<String>().join(' · '),
+                          style: AppText.caption),
+                    ],
+                  ),
+                ),
+                if (item.prixTotal != null)
+                  Text(fcfa(item.prixTotal!),
+                      style: AppText.number.copyWith(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.ink)),
+              ],
+            ),
+          ),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 14, 8, 14),
           child: Row(children: [
@@ -1458,6 +1618,11 @@ class _MissionFiche extends StatelessWidget {
                       style: AppText.cardTitle),
                   if (status == 'accepte' && item.numeroCitoyen.isNotEmpty)
                     Text(item.numeroCitoyen, style: AppText.number),
+                  if (ajustement != null)
+                    Text(
+                        'Ajustement +${fcfa(ajustement!.prixSupp)} : en attente du client',
+                        style: AppText.caption
+                            .copyWith(color: AppColors.stampViolet)),
                 ],
               ),
             ),
@@ -1475,18 +1640,60 @@ class _MissionFiche extends StatelessWidget {
             padding: const EdgeInsets.all(AppSpace.md),
             child: status == 'en_attente'
                 ? FilledButton.icon(
-                    onPressed: onAccept,
+                    // Une demande ménagère se lit avant d'être acceptée.
+                    onPressed: menage ? onOpen : onAccept,
                     style: FilledButton.styleFrom(
                         minimumSize: const Size(double.infinity, 50)),
-                    icon: const Icon(Icons.phone_forwarded_rounded, size: 20),
-                    label: const Text('Accepter et appeler'),
+                    icon: Icon(
+                        menage
+                            ? Icons.visibility_outlined
+                            : Icons.phone_forwarded_rounded,
+                        size: 20),
+                    label: Text(menage
+                        ? 'Voir la demande et répondre'
+                        : 'Accepter et appeler'),
                   )
-                : OutlinedButton.icon(
-                    onPressed: onFinish,
-                    style: OutlinedButton.styleFrom(
-                        minimumSize: const Size(double.infinity, 50)),
-                    icon: const Icon(Icons.task_alt_rounded, size: 20),
-                    label: const Text('Terminer la mission'),
+                : Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      if (menage) ...[
+                        Row(children: [
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed:
+                                  ajustement == null ? onAjustement : null,
+                              style: OutlinedButton.styleFrom(
+                                  minimumSize: const Size(0, 48)),
+                              icon: const Icon(Icons.tune_rounded, size: 18),
+                              label: const Text('Ajustement'),
+                            ),
+                          ),
+                          if (item.formule == Formule.abonnement) ...[
+                            const SizedBox(width: AppSpace.sm),
+                            Expanded(
+                              child: OutlinedButton.icon(
+                                onPressed: onPassage,
+                                style: OutlinedButton.styleFrom(
+                                    minimumSize: const Size(0, 48)),
+                                icon: const Icon(Icons.event_available_rounded,
+                                    size: 18),
+                                label: const Text('Pointer'),
+                              ),
+                            ),
+                          ],
+                        ]),
+                        const SizedBox(height: AppSpace.sm),
+                      ],
+                      FilledButton.tonalIcon(
+                        onPressed: onFinish,
+                        style: FilledButton.styleFrom(
+                            minimumSize: const Size(double.infinity, 50)),
+                        icon: const Icon(Icons.task_alt_rounded, size: 20),
+                        label: Text(item.formule == Formule.abonnement
+                            ? "Terminer l'abonnement"
+                            : 'Terminer la mission'),
+                      ),
+                    ],
                   ),
           ),
         ],
@@ -1984,6 +2191,56 @@ class _ProfileProgress extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Confirmation d'un refus, avec motif facultatif. Possède son champ de
+/// saisie : il vit jusqu'à la fin de l'animation de fermeture.
+class _DialogueRefus extends StatefulWidget {
+  const _DialogueRefus();
+
+  @override
+  State<_DialogueRefus> createState() => _DialogueRefusState();
+}
+
+class _DialogueRefusState extends State<_DialogueRefus> {
+  final _motif = TextEditingController();
+
+  @override
+  void dispose() {
+    _motif.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Refuser cette demande ?'),
+      content: SingleChildScrollView(
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          const Text(
+              'Le client sera prévenu et pourra choisir un autre prestataire.'),
+          const SizedBox(height: AppSpace.md),
+          TextField(
+            controller: _motif,
+            maxLength: 120,
+            textCapitalization: TextCapitalization.sentences,
+            decoration: const InputDecoration(
+                labelText: 'Motif (facultatif)',
+                hintText: 'Ex. : pas disponible ce jour-là'),
+          ),
+        ]),
+      ),
+      actions: [
+        TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Annuler')),
+        FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: AppColors.danger),
+            onPressed: () => Navigator.pop(context, _motif.text),
+            child: const Text('Refuser')),
+      ],
     );
   }
 }

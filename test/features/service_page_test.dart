@@ -5,16 +5,21 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:wanda/core/providers/repository_providers.dart';
+import 'package:wanda/core/router/app_routes.dart';
 import 'package:wanda/core/theme/app_theme.dart';
+import 'package:wanda/data/models/ajustement.dart';
 import 'package:wanda/data/models/avis_prestataire.dart';
+import 'package:wanda/data/models/categorie_service.dart';
 import 'package:wanda/data/models/citoyen.dart';
 import 'package:wanda/data/models/particulier.dart';
 import 'package:wanda/data/models/sollicitation.dart';
 import 'package:wanda/data/repositories/auth_repository.dart';
 import 'package:wanda/data/repositories/avis_repository.dart';
+import 'package:wanda/data/repositories/demande_repository.dart';
 import 'package:wanda/data/repositories/prestataire_repository.dart';
 import 'package:wanda/data/repositories/profile_repository.dart';
 import 'package:wanda/data/repositories/sollicitation_repository.dart';
+import 'package:wanda/features/demande/demande_page.dart';
 import 'package:wanda/features/services/service_page.dart';
 
 class _FakeAuth extends Fake implements AuthRepository {
@@ -94,13 +99,40 @@ const _citoyen = Citoyen(
     email: '',
     telephone: '+237677000000');
 
+/// Ajustements et passages des demandes confirmées.
+class _FakeDemandes extends Fake implements DemandeRepository {
+  List<Ajustement> enAttente = const [];
+  final reponses = <String, bool>{};
+
+  @override
+  Future<List<Ajustement>> ajustements(List<String> ids) async =>
+      enAttente.where((a) => ids.contains(a.sollicitationId)).toList();
+
+  @override
+  Future<List<DateTime>> passages(String id) async => [DateTime(2026, 10, 14)];
+
+  @override
+  Future<void> repondreAjustement(String id, {required bool accepte}) async =>
+      reponses[id] = accepte;
+}
+
 class _Harness {
   final prestataires = _FakePrestataires();
   final sollicitations = _FakeSollicitations();
+  final demandes = _FakeDemandes();
+
+  /// Arguments reçus par l'écran de réservation (route remplacée).
+  DemandeArgs? reservation;
 
   Widget app({Citoyen? citoyen = _citoyen}) {
     final router = GoRouter(routes: [
       GoRoute(path: '/', builder: (_, __) => const ServicePage()),
+      GoRoute(
+          path: AppRoutes.citoyenDemande,
+          builder: (_, state) {
+            reservation = state.extra as DemandeArgs?;
+            return const Scaffold(body: Text('RÉSERVATION'));
+          }),
     ]);
     return ProviderScope(
       overrides: [
@@ -109,6 +141,7 @@ class _Harness {
         avisRepositoryProvider.overrideWithValue(_FakeAvis()),
         prestataireRepositoryProvider.overrideWithValue(prestataires),
         sollicitationRepositoryProvider.overrideWithValue(sollicitations),
+        demandeRepositoryProvider.overrideWithValue(demandes),
       ],
       child: MaterialApp.router(theme: AppTheme.light, routerConfig: router),
     );
@@ -197,37 +230,121 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('Solliciter un expert crée la demande et ouvre le suivi',
+  testWidgets('Les 4 services en tuiles ; une tuile ouvre la réservation',
       (tester) async {
     tallScreen(tester);
     await tester.pumpWidget(h.app());
     h.prestataires.controller.add([_paul]);
     await _settle(tester);
 
-    await tester.tap(find.text('Paul Kamga').last);
+    expect(find.text('Réserver un service'), findsOneWidget);
+    for (final c in CategorieService.values) {
+      expect(find.bySemanticsLabel('Réserver : ${c.libelle}'), findsOneWidget);
+    }
+    await tester
+        .tap(find.bySemanticsLabel('Réserver : Lutte contre les nuisibles'));
     await _settle(tester);
-    await tester.tap(find.text('Solliciter Paul'));
-    await _settle(tester);
-
-    expect(h.sollicitations.created, ['p1']);
-    expect(find.text('Mes demandes'), findsWidgets);
+    expect(find.text('RÉSERVATION'), findsOneWidget);
+    expect(h.reservation!.service, CategorieService.nuisibles);
+    expect(h.reservation!.prestataire, isNull);
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('Profil incomplet : la sollicitation renvoie vers le profil',
+  testWidgets(
+      'Fiche prestataire : réserver un de ses services, lui déjà choisi',
       (tester) async {
     tallScreen(tester);
-    await tester.pumpWidget(h.app(citoyen: null));
-    h.prestataires.controller.add([_paul]);
+    await tester.pumpWidget(h.app());
+    h.prestataires.controller.add([_awa]);
     await _settle(tester);
 
-    await tester.tap(find.text('Paul Kamga').last);
+    await tester.tap(find.text('Awa Ngo').last);
     await _settle(tester);
-    await tester.tap(find.text('Solliciter Paul'));
+    // Awa propose Linge et Déchets : un bouton par service.
+    expect(find.text('Quel service ?'), findsOneWidget);
+    expect(find.text('Réserver : Linge'), findsOneWidget);
+    await tester.tap(find.text('Réserver : Déchets'));
     await _settle(tester);
 
-    expect(h.sollicitations.created, isEmpty);
-    expect(find.textContaining('Complétez votre profil'), findsOneWidget);
+    expect(h.reservation!.service, CategorieService.dechets);
+    expect(h.reservation!.prestataire!.id, 'p2');
+    expect(h.sollicitations.created, isEmpty,
+        reason: 'plus de sollicitation sans prix');
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('Ajustement demandé : le client l\'accepte depuis sa fiche',
+      (tester) async {
+    tallScreen(tester);
+    h.demandes.enAttente = [
+      const Ajustement(
+          id: 'aj1',
+          sollicitationId: 'd9',
+          minutesSupp: 60,
+          produitsSupp: 0,
+          motif: 'Une chambre de plus',
+          prixSupp: 1200,
+          statut: 'en_attente'),
+    ];
+    await tester.pumpWidget(h.app());
+    await tester.tap(find.text('Mes demandes'));
+    await _settle(tester);
+    h.sollicitations.controller.add([
+      Sollicitation.fromMap({
+        'id': 'd9',
+        'prestataire_id': 'p1',
+        'citoyen_id': 'c1',
+        'statut': 'accepte',
+        'service': 'menage',
+        'formule': 'abonnement',
+        'frequence': 'hebdomadaire',
+        'prix_passage': 5400,
+        'prix_total': 21600,
+        'date_souhaitee': '2026-10-22',
+        'creneau': 'matin',
+      }),
+    ]);
+    await _settle(tester);
+
+    expect(find.text('AJUSTEMENT'), findsOneWidget);
+    expect(find.text('« Une chambre de plus »'), findsOneWidget);
+    expect(find.textContaining('1 passage effectué'), findsOneWidget);
+    expect(find.textContaining('Prévu jeu. 22/10, matin'), findsOneWidget);
+    await tester.tap(find.text('Accepter'));
+    await _settle(tester);
+    expect(h.demandes.reponses, {'aj1': true});
+    expect(find.text('AJUSTEMENT'), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('Demande refusée : « Choisir un autre prestataire » la reprend',
+      (tester) async {
+    tallScreen(tester);
+    await tester.pumpWidget(h.app());
+    await tester.tap(find.text('Mes demandes'));
+    await _settle(tester);
+    h.sollicitations.controller.add([
+      Sollicitation.fromMap({
+        'id': 'd8',
+        'prestataire_id': 'p1',
+        'citoyen_id': 'c1',
+        'statut': 'refuse',
+        'motif_refus': 'Pas disponible mardi',
+        'service': 'linge',
+        'formule': 'ponctuelle',
+        'reponses': {'paniers': 3},
+        'photos': ['c1/d/1.jpg'],
+        'prix_total': 5000,
+      }),
+    ]);
+    await _settle(tester);
+
+    expect(find.text('REFUSÉ'), findsOneWidget);
+    expect(find.text('« Pas disponible mardi »'), findsOneWidget);
+    await tester.tap(find.text('Choisir un autre prestataire'));
+    await _settle(tester);
+    expect(h.reservation!.reprise!.entier('paniers'), 3);
+    expect(h.reservation!.photosEnvoyees, ['c1/d/1.jpg']);
     await tester.pumpWidget(const SizedBox());
   });
 

@@ -11,6 +11,9 @@ class AppRoutes {
   static const citoyenServices = '/citoyen/services';
   static const citoyenSignal = '/citoyen/signal';
 
+  /// Réserver un service ménager (`extra` : DemandeArgs).
+  static const citoyenDemande = '/citoyen/demande';
+
   static const prestaLogin = '/presta/login';
 
   /// Certification facultative du compte artisan (badge de confiance).

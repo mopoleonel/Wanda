@@ -213,4 +213,78 @@ class DemandeMenage {
   /// Une demande d'abonnement doit avoir un rythme.
   bool get formuleComplete =>
       formule == Formule.ponctuelle || frequence != null;
+
+  /// « Une fois » / « Abonnement · chaque semaine ».
+  String get libelleFormule => formule == Formule.ponctuelle
+      ? formule.libelle
+      : '${formule.libelle} · ${(frequence?.libelle ?? '').toLowerCase()}';
+
+  /// Les réponses en phrases courtes, pour le récapitulatif du client et la
+  /// fiche du prestataire (indépendant des tarifs).
+  List<String> resumeReponses() {
+    String n(int q, String un, String plusieurs) =>
+        '$q ${q > 1 ? plusieurs : un}';
+    String libelle(List<Choix> choix, String cle) =>
+        choix.where((c) => c.code == code(cle)).firstOrNull?.libelle ?? '—';
+    final lignes = <String>[];
+    switch (service) {
+      case CategorieService.menage:
+        lignes.add([
+          if (entier(Q.chambres) > 0)
+            n(entier(Q.chambres), 'chambre', 'chambres'),
+          if (entier(Q.salons) > 0) n(entier(Q.salons), 'salon', 'salons'),
+          if (entier(Q.cuisines) > 0)
+            n(entier(Q.cuisines), 'cuisine', 'cuisines'),
+          if (entier(Q.doucheWc) > 0)
+            n(entier(Q.doucheWc), 'douche / WC', 'douches / WC'),
+        ].join(', '));
+        if (entier(Q.canapes) > 0 || entier(Q.tapis) > 0) {
+          lignes.add([
+            if (entier(Q.canapes) > 0)
+              n(entier(Q.canapes), 'canapé', 'canapés'),
+            if (entier(Q.tapis) > 0) n(entier(Q.tapis), 'tapis', 'tapis'),
+          ].join(', '));
+        }
+        final options = [
+          if (oui(Q.vitres)) 'vitres',
+          if (oui(Q.frigo)) 'intérieur du frigo',
+          if (oui(Q.four)) 'intérieur du four',
+        ];
+        if (options.isNotEmpty) lignes.add('En plus : ${options.join(', ')}');
+        lignes.add(
+            'État du logement : ${libelle(Q.etats, Q.etat).toLowerCase()}');
+      case CategorieService.linge:
+        lignes.add(n(entier(Q.paniers) < 1 ? 1 : entier(Q.paniers), 'panier',
+            'paniers'));
+        if (oui(Q.drapsDelicats)) lignes.add('Draps ou vêtements délicats');
+        if (oui(Q.repassage)) {
+          lignes.add(
+              'Repassage : ${n(entier(Q.piecesRepassage), 'pièce', 'pièces')}');
+        }
+      case CategorieService.dechets:
+        final hebdo = formule == Formule.abonnement &&
+            frequence == Frequence.hebdomadaire;
+        lignes.add(hebdo
+            ? '${n(entier(Q.sacs), 'sac', 'sacs')} par semaine, '
+                '${n(entier(Q.passagesSemaine) < 1 ? 1 : entier(Q.passagesSemaine), 'passage', 'passages')} par semaine'
+            : n(entier(Q.sacs), 'sac', 'sacs'));
+        lignes.add(entier(Q.etage) == 0
+            ? 'Rez-de-chaussée'
+            : '${entier(Q.etage)}${entier(Q.etage) == 1 ? 'er' : 'e'} étage');
+        lignes
+            .add('Bac : ${libelle(Q.distances, Q.distanceBac).toLowerCase()}');
+      case CategorieService.nuisibles:
+        lignes.add(libelle(Q.nuisibles, Q.nuisible));
+        lignes.add(
+            n(entier(Q.pieces) < 1 ? 1 : entier(Q.pieces), 'pièce', 'pièces'));
+        lignes.add(
+            'Infestation : ${libelle(Q.infestations, Q.infestation).toLowerCase()}');
+    }
+    if (service != CategorieService.dechets) {
+      lignes.add(produitsFournis
+          ? 'Produits apportés par le prestataire'
+          : 'Produits fournis par le client');
+    }
+    return lignes;
+  }
 }

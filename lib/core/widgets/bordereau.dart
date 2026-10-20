@@ -393,6 +393,10 @@ class Letterhead extends StatelessWidget {
   final String? overline;
   final String? subtitle;
   final bool showBack;
+
+  /// Action du bouton retour (par défaut : écran précédent). Un parcours en
+  /// étapes s'en sert pour revenir à l'étape précédente.
+  final VoidCallback? onBack;
   final bool showLogo;
   final Widget? trailing;
   final Widget? bottom;
@@ -403,6 +407,7 @@ class Letterhead extends StatelessWidget {
     this.overline,
     this.subtitle,
     this.showBack = false,
+    this.onBack,
     this.showLogo = false,
     this.trailing,
     this.bottom,
@@ -431,9 +436,10 @@ class Letterhead extends StatelessWidget {
                 Row(children: [
                   if (showBack) ...[
                     IconButton(
-                      onPressed: () => context.canPop()
-                          ? context.pop()
-                          : Navigator.of(context).maybePop(),
+                      onPressed: onBack ??
+                          () => context.canPop()
+                              ? context.pop()
+                              : Navigator.of(context).maybePop(),
                       tooltip: 'Retour',
                       style: IconButton.styleFrom(
                         backgroundColor: Colors.white.withValues(alpha: 0.12),
@@ -689,6 +695,56 @@ class VerifiedMark extends StatelessWidget {
           size: size,
           color: AppColors.done,
           semanticLabel: 'Identité vérifiée'),
+    );
+  }
+}
+
+/// Piste d'étapes d'un parcours, posée dans l'en-tête vert : une barre par
+/// étape, verte (feuille) une fois atteinte. [etape] commence à 1.
+class PisteEtapes extends StatelessWidget {
+  final List<String> libelles;
+  final int etape;
+  const PisteEtapes({super.key, required this.libelles, required this.etape});
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      label: 'Étape $etape sur ${libelles.length} : ${libelles[etape - 1]}',
+      excludeSemantics: true,
+      child: Row(
+        children: List.generate(libelles.length, (i) {
+          final active = etape >= i + 1;
+          return Expanded(
+            child: Padding(
+              padding: EdgeInsets.only(
+                  right: i < libelles.length - 1 ? AppSpace.sm : 0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  AnimatedContainer(
+                    duration: const Duration(milliseconds: 260),
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: active
+                          ? AppColors.brandLeaf
+                          : Colors.white.withValues(alpha: 0.22),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(libelles[i],
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppText.caption.copyWith(
+                          color: active
+                              ? Colors.white
+                              : AppColors.onLetterheadSoft)),
+                ],
+              ),
+            ),
+          );
+        }),
+      ),
     );
   }
 }

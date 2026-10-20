@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../data/models/categorie_service.dart';
+import '../../features/demande/demande_page.dart';
 import '../../features/auth/citoyen_login_page.dart';
 import '../../features/auth/presta_login_page.dart';
 import '../../features/certification/certification_page.dart';
@@ -60,6 +62,14 @@ final goRouterProvider = Provider<GoRouter>((ref) {
         path: AppRoutes.citoyenServices,
         pageBuilder: (context, state) => _fadeThrough(
             ServicePage(initialCategory: state.extra as String?), state),
+      ),
+      GoRoute(
+        path: AppRoutes.citoyenDemande,
+        pageBuilder: (context, state) => _fadeThrough(
+            DemandePage(
+                args: state.extra as DemandeArgs? ??
+                    const DemandeArgs(CategorieService.menage)),
+            state),
       ),
       GoRoute(
         path: AppRoutes.citoyenSignal,

@@ -21,6 +21,26 @@ class PrestataireRepository {
         .map((rows) => rows.map(Particulier.fromMap).toList());
   }
 
+  /// Prestataires en ligne qui proposent [serviceCode] (choix du
+  /// prestataire au moment de réserver).
+  Future<List<Particulier>> disponiblesPour(String serviceCode) async {
+    try {
+      final rows = await _client
+          .from('particuliers')
+          .select()
+          .eq('is_available', true)
+          .contains('services', [serviceCode])
+          .limit(100)
+          .timeout(const Duration(seconds: 10));
+      return [
+        for (final r in rows as List)
+          Particulier.fromMap(Map<String, dynamic>.from(r as Map)),
+      ];
+    } catch (e, st) {
+      throw mapError('PrestataireRepository.disponiblesPour', e, st);
+    }
+  }
+
   Future<Particulier?> getById(String id) async {
     try {
       final data = await _client
