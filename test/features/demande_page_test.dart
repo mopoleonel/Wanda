@@ -8,12 +8,15 @@ import 'package:wanda/core/router/app_routes.dart';
 import 'package:wanda/core/theme/app_theme.dart';
 import 'package:wanda/data/models/avis_prestataire.dart';
 import 'package:wanda/data/models/categorie_service.dart';
+import 'package:wanda/data/models/citoyen.dart';
 import 'package:wanda/data/models/demande_menage.dart';
 import 'package:wanda/data/models/particulier.dart';
 import 'package:wanda/data/pricing/tarification.dart';
+import 'package:wanda/data/repositories/auth_repository.dart';
 import 'package:wanda/data/repositories/avis_repository.dart';
 import 'package:wanda/data/repositories/demande_repository.dart';
 import 'package:wanda/data/repositories/prestataire_repository.dart';
+import 'package:wanda/data/repositories/profile_repository.dart';
 import 'package:wanda/features/demande/composants.dart';
 import 'package:wanda/features/demande/demande_page.dart';
 
@@ -70,6 +73,27 @@ class _FakePrestataires extends Fake implements PrestataireRepository {
   Future<List<Particulier>> disponiblesPour(String code) async => liste;
 }
 
+class _FakeAuth extends Fake implements AuthRepository {
+  @override
+  String? get currentUserId => 'c1';
+}
+
+class _FakeProfils extends Fake implements ProfileRepository {
+  Citoyen citoyen = const Citoyen(
+      citoyenId: 'c1',
+      nom: 'Mbarga',
+      prenom: 'Lucie',
+      email: '',
+      telephone: '+237677000000');
+  String? nomEnregistre;
+
+  @override
+  Future<Citoyen?> fetchCitoyen(String id) async => citoyen;
+
+  @override
+  Future<void> updateCitoyen(Citoyen c) async => nomEnregistre = c.nom;
+}
+
 class _FakeAvis extends Fake implements AvisRepository {
   @override
   Future<Map<String, RatingSummary>> averagesForPrestataires(
@@ -96,6 +120,7 @@ const _ben = Particulier(
 class _Harness {
   final demandes = _FakeDemandes();
   final prestataires = _FakePrestataires();
+  final profils = _FakeProfils();
   Object? retour;
 
   Widget app(DemandeArgs args) {
@@ -125,6 +150,8 @@ class _Harness {
         demandeRepositoryProvider.overrideWithValue(demandes),
         prestataireRepositoryProvider.overrideWithValue(prestataires),
         avisRepositoryProvider.overrideWithValue(_FakeAvis()),
+        authRepositoryProvider.overrideWithValue(_FakeAuth()),
+        profileRepositoryProvider.overrideWithValue(profils),
       ],
       child: MaterialApp.router(theme: AppTheme.light, routerConfig: router),
     );
@@ -325,6 +352,38 @@ void main() {
     expect(find.textContaining("n'est plus disponible"), findsOneWidget);
     expect(find.text('Vérifiez et réservez'), findsOneWidget);
     expect(h.retour, isNull);
+    await _fin(tester);
+  });
+
+  testWidgets('Client inscrit sans nom : demandé au récapitulatif, enregistré',
+      (tester) async {
+    grandEcran(tester);
+    h.profils.citoyen = const Citoyen(
+        citoyenId: 'c1',
+        nom: '',
+        prenom: '',
+        email: '',
+        telephone: '+237690000002');
+    await _ouvrir(
+        tester,
+        h,
+        DemandeArgs(CategorieService.linge,
+            prestataire: _awa,
+            reprise: DemandeMenage.initiale(CategorieService.linge),
+            photosEnvoyees: const ['c1/d/1.jpg']));
+
+    expect(find.text('Votre nom'), findsOneWidget);
+    await tester.tap(_boutonReserver);
+    await _settle(tester);
+    expect(
+        find.text('Indiquez votre nom pour le prestataire.'), findsOneWidget);
+    expect(h.demandes.creees, isEmpty);
+
+    await tester.enterText(find.widgetWithText(TextField, 'Nom'), 'Atangana');
+    await tester.tap(_boutonReserver);
+    await _settle(tester);
+    expect(h.profils.nomEnregistre, 'Atangana');
+    expect(h.demandes.creees, hasLength(1));
     await _fin(tester);
   });
 

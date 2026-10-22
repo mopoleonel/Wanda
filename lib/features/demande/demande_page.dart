@@ -25,6 +25,7 @@ import '../../core/widgets/status_views.dart';
 import '../../data/models/analyse_ia.dart';
 import '../../data/models/avis_prestataire.dart';
 import '../../data/models/categorie_service.dart';
+import '../../data/models/citoyen.dart';
 import '../../data/models/demande_menage.dart';
 import '../../data/models/particulier.dart';
 import '../../data/pricing/tarification.dart';
@@ -95,6 +96,13 @@ class _DemandePageState extends ConsumerState<DemandePage> {
   late DateTime _date;
   Creneau _creneau = Creneau.matin;
   bool _reservation = false;
+
+  /// Profil du client : un compte tout juste créé par WhatsApp n'a pas
+  /// encore de nom, exigé par le serveur pour réserver. On le demande ici
+  /// plutôt que d'échouer à la dernière étape.
+  Citoyen? _citoyen;
+  final _nom = TextEditingController();
+  bool get _nomManquant => _citoyen != null && _citoyen!.nom.trim().isEmpty;
 
   @override
   void initState() {
@@ -233,6 +241,24 @@ class _DemandePageState extends ConsumerState<DemandePage> {
   Future<void> _preparerRecap() async {
     _chargerPrixServeur();
     if (_choisi == null && _prestataires == null) _chargerPrestataires();
+    _chargerProfil();
+  }
+
+  Future<void> _chargerProfil() async {
+    final uid = ref.read(authRepositoryProvider).currentUserId;
+    if (uid == null || _citoyen != null) return;
+    try {
+      final c = await ref.read(profileRepositoryProvider).fetchCitoyen(uid);
+      if (mounted && c != null) setState(() => _citoyen = c);
+    } on AppException catch (_) {
+      // Le serveur redira ce qui manque au moment de réserver.
+    }
+  }
+
+  @override
+  void dispose() {
+    _nom.dispose();
+    super.dispose();
   }
 
   Future<void> _chargerPrixServeur() async {
@@ -313,8 +339,28 @@ class _DemandePageState extends ConsumerState<DemandePage> {
       _chargerPrixServeur();
       return;
     }
+    if (_nomManquant && _nom.text.trim().length < 2) {
+      showAppSnackBar(context, 'Indiquez votre nom pour le prestataire.');
+      return;
+    }
     setState(() => _reservation = true);
     try {
+      final c = _citoyen;
+      if (c != null && _nomManquant) {
+        await ref.read(profileRepositoryProvider).updateCitoyen(Citoyen(
+              citoyenId: c.citoyenId,
+              nom: _nom.text.trim(),
+              prenom: c.prenom,
+              email: c.email,
+              telephone: c.telephone,
+            ));
+        _citoyen = Citoyen(
+            citoyenId: c.citoyenId,
+            nom: _nom.text.trim(),
+            prenom: c.prenom,
+            email: c.email,
+            telephone: c.telephone);
+      }
       await ref.read(demandeRepositoryProvider).creer(
             prestataireId: prestataire.id,
             demande: _demande,
@@ -604,6 +650,24 @@ class _DemandePageState extends ConsumerState<DemandePage> {
             ],
           ),
         ),
+        if (_nomManquant) ...[
+          const SectionTitle('Votre nom',
+              padding: EdgeInsets.only(top: AppSpace.xl, bottom: AppSpace.sm)),
+          Text(
+              'Transmis au prestataire avec votre numéro, pour qu\'il vous '
+              'reconnaisse à son arrivée.',
+              style: AppText.caption),
+          const SizedBox(height: AppSpace.sm),
+          TextField(
+            controller: _nom,
+            textCapitalization: TextCapitalization.words,
+            autofillHints: const [AutofillHints.name],
+            decoration: const InputDecoration(
+              labelText: 'Nom',
+              prefixIcon: Icon(Icons.person_outline_rounded, size: 20),
+            ),
+          ),
+        ],
         const SectionTitle('Quand ?',
             padding: EdgeInsets.only(top: AppSpace.xl, bottom: AppSpace.md)),
         _choixDate(),
