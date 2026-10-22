@@ -114,6 +114,13 @@ class _FakeDemandes extends Fake implements DemandeRepository {
   @override
   Future<void> repondreAjustement(String id, {required bool accepte}) async =>
       reponses[id] = accepte;
+
+  final photosDemandees = <String>[];
+  @override
+  Future<String> urlPhoto(String chemin) async {
+    photosDemandees.add(chemin);
+    return 'https://exemple.invalid/photo.jpg';
+  }
 }
 
 class _Harness {
@@ -283,6 +290,7 @@ void main() {
           minutesSupp: 60,
           produitsSupp: 0,
           motif: 'Une chambre de plus',
+          photos: ['p1/aj/1.jpg'],
           prixSupp: 1200,
           statut: 'en_attente'),
     ];
@@ -310,6 +318,13 @@ void main() {
     expect(find.text('« Une chambre de plus »'), findsOneWidget);
     expect(find.textContaining('1 passage effectué'), findsOneWidget);
     expect(find.textContaining('Prévu jeu. 22/10, matin'), findsOneWidget);
+
+    // La photo du prestataire justifie le supplément (URL signée).
+    await tester.tap(find.text('Voir la photo du prestataire'));
+    await _settle(tester);
+    expect(h.demandes.photosDemandees, ['p1/aj/1.jpg']);
+    await tester.tap(find.byTooltip('Fermer'));
+    await _settle(tester);
     await tester.tap(find.text('Accepter'));
     await _settle(tester);
     expect(h.demandes.reponses, {'aj1': true});

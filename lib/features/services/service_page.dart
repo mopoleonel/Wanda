@@ -523,6 +523,42 @@ class _ServicePageState extends ConsumerState<ServicePage> {
     }
   }
 
+  /// Photo jointe à un ajustement (privée : URL signée de courte durée).
+  Future<void> _voirPhoto(String chemin) async {
+    try {
+      final url = await ref.read(demandeRepositoryProvider).urlPhoto(chemin);
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (c) => Dialog(
+          insetPadding: const EdgeInsets.all(AppSpace.md),
+          clipBehavior: Clip.antiAlias,
+          child: Stack(children: [
+            InteractiveViewer(
+              child: Image.network(url,
+                  fit: BoxFit.contain,
+                  errorBuilder: (_, __, ___) => const Padding(
+                        padding: EdgeInsets.all(AppSpace.xl),
+                        child: Text('Photo indisponible.'),
+                      )),
+            ),
+            Positioned(
+              top: 4,
+              right: 4,
+              child: IconButton.filled(
+                tooltip: 'Fermer',
+                onPressed: () => Navigator.pop(c),
+                icon: const Icon(Icons.close_rounded),
+              ),
+            ),
+          ]),
+        ),
+      );
+    } on AppException catch (e) {
+      _showErrorSnackBar(e.message);
+    }
+  }
+
   /// Ouvre la réservation ; revient sur « Mes demandes » une fois envoyée.
   Future<void> _reserver(DemandeArgs args) async {
     final envoyee =
@@ -1126,6 +1162,7 @@ class _ServicePageState extends ConsumerState<ServicePage> {
                     ajustement: _ajustements[o.id],
                     passages: _passages[o.id],
                     onRepondre: _repondreAjustement,
+                    onVoirPhoto: _voirPhoto,
                     onReprendre: () => _reprendre(o),
                     timerLabel: _getTimerOrEnd(o),
                     canCancel: _canCancel(o.dateSollicitation),
@@ -1745,6 +1782,7 @@ class _OrderFiche extends StatelessWidget {
   final Ajustement? ajustement;
   final int? passages;
   final void Function(Ajustement, bool) onRepondre;
+  final ValueChanged<String> onVoirPhoto;
   final VoidCallback onReprendre;
   final String timerLabel;
   final bool canCancel;
@@ -1759,6 +1797,7 @@ class _OrderFiche extends StatelessWidget {
     required this.ajustement,
     required this.passages,
     required this.onRepondre,
+    required this.onVoirPhoto,
     required this.onReprendre,
     required this.timerLabel,
     required this.canCancel,
@@ -1849,7 +1888,8 @@ class _OrderFiche extends StatelessWidget {
           ]),
         ),
         if (aj != null)
-          _BandeauAjustement(ajustement: aj, onRepondre: onRepondre),
+          _BandeauAjustement(
+              ajustement: aj, onRepondre: onRepondre, onVoirPhoto: onVoirPhoto),
         if (isRefused && order.estDemandeMenage) ...[
           const Divider(),
           Padding(
@@ -2069,8 +2109,11 @@ class _ResumeDemande extends StatelessWidget {
 class _BandeauAjustement extends StatelessWidget {
   final Ajustement ajustement;
   final void Function(Ajustement, bool) onRepondre;
+  final ValueChanged<String> onVoirPhoto;
   const _BandeauAjustement(
-      {required this.ajustement, required this.onRepondre});
+      {required this.ajustement,
+      required this.onRepondre,
+      required this.onVoirPhoto});
 
   @override
   Widget build(BuildContext context) {
@@ -2105,6 +2148,15 @@ class _BandeauAjustement extends StatelessWidget {
           const SizedBox(height: 4),
           Text(quoi, style: AppText.bodyStrong),
           Text('« ${a.motif} »', style: AppText.body),
+          if (a.photos.isNotEmpty)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                onPressed: () => onVoirPhoto(a.photos.first),
+                icon: const Icon(Icons.image_outlined, size: 20),
+                label: const Text('Voir la photo du prestataire'),
+              ),
+            ),
           const SizedBox(height: AppSpace.md),
           Row(children: [
             Expanded(
