@@ -43,7 +43,7 @@ select u.id, u.email,
 from auth.users u
 left join public.particuliers p on p.id = u.id
 left join public.entreprises  e on e.id = u.id
-left join public.citoyens     c on c.id = u.id
+left join public.citoyens     c on c.citoyen_id = u.id
 where coalesce(u.phone, '') = '';
 
 -- ---------------------------------------------------------------------------
@@ -60,7 +60,7 @@ select id, email from rattachements where numero is null;
 --    supprimer (Authentication > Users) puis relancer ce script.
 select r.id as ancien_compte, r.email, r.numero,
        u.id as compte_qui_a_ce_numero,
-       not exists (select 1 from public.citoyens     where id = u.id)
+       not exists (select 1 from public.citoyens     where citoyen_id = u.id)
    and not exists (select 1 from public.particuliers where id = u.id)
    and not exists (select 1 from public.entreprises  where id = u.id)
          as compte_vide

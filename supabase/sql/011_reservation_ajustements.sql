@@ -45,7 +45,7 @@ declare
 begin
   if v_uid is null then raise exception 'NON_CONNECTE'; end if;
 
-  select nom, prenom, telephone into v_cit from citoyens where id = v_uid;
+  select nom, prenom, telephone into v_cit from citoyens where citoyen_id = v_uid;
   if not found then raise exception 'CITOYEN_INCONNU'; end if;
   if coalesce(trim(v_cit.nom), '') = '' or coalesce(trim(v_cit.telephone), '') = '' then
     raise exception 'PROFIL_CITOYEN_INCOMPLET';

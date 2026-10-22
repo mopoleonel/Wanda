@@ -97,9 +97,22 @@ Dans le Dashboard Supabase > SQL Editor, exécuter dans l'ordre :
     demandes, refus, ajustements et passages (remplace les textes de 003
     pour les demandes ; les signalements ne changent pas).
 
-Tous ces scripts sont relançables. Ils ont été exécutés et rejoués sur
-PostgreSQL 15 avec un scénario complet (fraudes au prix refusées, prix
-serveur, ajustement, passages).
+13. `supabase/sql/013_correctif_creer_demande.sql` — **correctif à lancer si
+    011 a été appliqué avant le 22/10/2026** : la table `citoyens` a pour
+    identifiant `citoyen_id` ; sans ce correctif, toute réservation échoue.
+    Le même défaut touchait **007** (corrigé) : relancer 007 s'il avait
+    échoué.
+
+Les scripts 008 et suivants sont relançables.
+
+### Tester les migrations sans toucher à la base
+
+`bash supabase/tests/lancer.sh` (Docker démarré) rejoue 005 → 013 sur un
+PostgreSQL 15 jetable qui reproduit le schéma Supabase utile
+(`supabase/tests/00_mini_supabase.sql`), vérifie que 008+ se relancent,
+puis joue un scénario complet en tant qu'utilisateurs connectés : fraudes au
+prix refusées, prix serveur, refus, ajustement, passages, aucun accès pour
+un tiers (`supabase/tests/20_scenario_services.sql`).
 
 ### Modifier les tarifs (administrateur)
 
