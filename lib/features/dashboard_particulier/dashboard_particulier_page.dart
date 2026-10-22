@@ -410,9 +410,28 @@ class _DashboardParticulierPageState
       return;
     }
     _certificationPromptShown = true;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    _auPremierPlan().then((_) {
       if (mounted) _showCertificationPrompt(state);
     });
+  }
+
+  /// Attend que l'app soit au premier plan : à la première connexion, la
+  /// demande d'autorisation des notifications (fenêtre système) s'ouvre en
+  /// même temps ; le rappel s'affiche une fois qu'elle est fermée, au lieu de
+  /// s'empiler dessous.
+  Future<void> _auPremierPlan() async {
+    await Future<void>.delayed(const Duration(milliseconds: 600));
+    final etat = WidgetsBinding.instance.lifecycleState;
+    if (etat == null || etat == AppLifecycleState.resumed) return;
+    final retour = Completer<void>();
+    late final AppLifecycleListener ecoute;
+    ecoute = AppLifecycleListener(onResume: () {
+      ecoute.dispose();
+      if (!retour.isCompleted) retour.complete();
+    });
+    await retour.future;
+    // Laisse la fenêtre système finir de se fermer.
+    await Future<void>.delayed(const Duration(milliseconds: 300));
   }
 
   Future<void> _showCertificationPrompt(_IdentityState state) {
