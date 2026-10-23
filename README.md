@@ -103,11 +103,18 @@ Dans le Dashboard Supabase > SQL Editor, exécuter dans l'ordre :
     Le même défaut touchait **007** (corrigé) : relancer 007 s'il avait
     échoué.
 
+14. `supabase/sql/014_proteger_dossiers_prives.sql` — **sécurité, à lancer** :
+    une ancienne politique de stockage, valable pour tous les buckets,
+    permettait à tout utilisateur connecté de déposer (et de lire) des
+    fichiers dans les dossiers privés `demandes` et `identites` d'un autre.
+    Le script exclut ces deux buckets de toute politique qui ne précise pas
+    de bucket, sans rien changer pour les autres (profils, signalements…).
+
 Les scripts 008 et suivants sont relançables.
 
 ### Tester les migrations sans toucher à la base
 
-`bash supabase/tests/lancer.sh` (Docker démarré) rejoue 005 → 013 sur un
+`bash supabase/tests/lancer.sh` (Docker démarré) rejoue 005 → 014 sur un
 PostgreSQL 15 jetable qui reproduit le schéma Supabase utile
 (`supabase/tests/00_mini_supabase.sql`), vérifie que 008+ se relancent,
 puis joue un scénario complet en tant qu'utilisateurs connectés : fraudes au

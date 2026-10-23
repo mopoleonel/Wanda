@@ -21,6 +21,12 @@ create table storage.objects (
   bucket_id text, name text, owner uuid default auth.uid(),
   created_at timestamptz default now());
 alter table storage.objects enable row level security;
+-- Comme en production (constat du 23/10/2026) : une ancienne politique
+-- large, sans condition sur le bucket. 014 doit en exclure les dossiers privés.
+create policy acces_large_ecriture on storage.objects for insert
+  to authenticated with check (true);
+create policy acces_large_lecture on storage.objects for select
+  to authenticated using (true);
 create function storage.foldername(name text) returns text[] language sql immutable as $$
   select (string_to_array(name, '/'))[1:array_length(string_to_array(name, '/'), 1) - 1] $$;
 

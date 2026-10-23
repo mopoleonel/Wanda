@@ -27,13 +27,18 @@ update particuliers set is_available = true;  -- prestataire 1111… : linge + m
 create or replace function pg_temp.attendre_erreur(sql text, code text) returns void
 language plpgsql as $$
 begin
-  execute sql;
-  raise exception 'ÉCHEC : % aurait dû lever %', sql, code;
-exception when raise_exception or check_violation or insufficient_privilege then
-  if sqlerrm not like '%' || code || '%' then
-    raise exception 'ÉCHEC : % a levé « % » au lieu de %', sql, sqlerrm, code;
-  end if;
-  raise notice 'OK refusé : %', code;
+  begin
+    execute sql;
+  exception when others then
+    -- Refusé : vérifier que c'est pour la bonne raison.
+    if sqlerrm not like '%' || code || '%' then
+      raise exception 'ÉCHEC : % a levé « % » au lieu de %', sql, sqlerrm, code;
+    end if;
+    raise notice 'OK refusé : %', code;
+    return;
+  end;
+  -- Hors du bloc d'exception : ce message ne peut pas être pris pour un refus.
+  raise exception 'ÉCHEC : accepté alors qu''il fallait refuser (%) : %', code, sql;
 end $$;
 
 -- ===== Client =====
@@ -115,5 +120,20 @@ select pg_temp.attendre_erreur(format($$select pointer_passage(%L)$$, :'abo_id')
 update sollicitations set statut = 'termine', date_fin = now() where id = :'demande_id';
 select set_config('request.jwt.claim.sub', '22222222-2222-2222-2222-222222222222', false);
 update sollicitations set statut = 'archive' where id = :'demande_id';
+-- ===== Stockage : dossiers privés (014) =====
+select set_config('request.jwt.claim.sub', '22222222-2222-2222-2222-222222222222', false);
+select pg_temp.attendre_erreur($$insert into storage.objects(bucket_id, name)
+  values ('demandes', '11111111-1111-1111-1111-111111111111/intrus.jpg')$$, 'row-level security');
+select pg_temp.attendre_erreur($$insert into storage.objects(bucket_id, name)
+  values ('identites', '11111111-1111-1111-1111-111111111111/cni.jpg')$$, 'row-level security');
+insert into storage.objects(bucket_id, name)
+  values ('demandes', '22222222-2222-2222-2222-222222222222/d9/1.jpg');
+insert into storage.objects(bucket_id, name) values ('profils', 'pro_x.jpg');
+select set_config('request.jwt.claim.sub', '33333333-3333-3333-3333-333333333333', false);
+do $$ begin
+  if exists (select 1 from storage.objects where bucket_id = 'demandes') then
+    raise exception 'ÉCHEC : un tiers lit les photos de demandes'; end if;
+  raise notice 'OK un tiers ne lit pas les photos de demandes';
+end $$;
 reset role;
 select 'Scénario terminé sans écart' as resultat;
