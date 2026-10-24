@@ -61,6 +61,15 @@ class SollicitationRepository {
         });
   }
 
+  /// Signal temps réel : une mission du prestataire a été créée ou modifiée
+  /// (nouvelle demande, annulation, prix ajusté…). L'écran relit ensuite la
+  /// liste paginée avec [fetchForPrestataire].
+  Stream<void> changementsPrestataire(String prestataireId) => _client
+      .from('sollicitations')
+      .stream(primaryKey: ['id'])
+      .eq('prestataire_id', prestataireId)
+      .map((_) {});
+
   /// Missions reçues par un prestataire, paginées.
   Future<List<Sollicitation>> fetchForPrestataire(
     String prestataireId, {

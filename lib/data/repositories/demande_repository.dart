@@ -130,6 +130,14 @@ class DemandeRepository {
     }
   }
 
+  /// Signal temps réel (migration 015) : un ajustement ou un passage a été
+  /// ajouté ou modifié. Les règles RLS limitent aux lignes de l'utilisateur ;
+  /// l'écran relit ensuite le détail avec [ajustements] et [passages].
+  Stream<void> changementsSuivi(String table) {
+    assert(table == 'ajustements' || table == 'passages');
+    return _client.from(table).stream(primaryKey: ['id']).map((_) {});
+  }
+
   Future<List<Ajustement>> ajustements(List<String> sollicitationIds) async {
     if (sollicitationIds.isEmpty) return const [];
     try {

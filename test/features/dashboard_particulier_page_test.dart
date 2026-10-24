@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -73,6 +75,10 @@ class _FakeSollicitations extends Fake implements SollicitationRepository {
       {DateTime? dateFin}) async {
     statuts[id] = status;
   }
+
+  final direct = StreamController<void>.broadcast();
+  @override
+  Stream<void> changementsPrestataire(String prestataireId) => direct.stream;
 }
 
 class _FakePrestataires extends Fake implements PrestataireRepository {
@@ -87,6 +93,9 @@ class _FakeDemandes extends Fake implements DemandeRepository {
 
   @override
   Future<List<Ajustement>> ajustements(List<String> ids) async => const [];
+
+  @override
+  Stream<void> changementsSuivi(String table) => const Stream.empty();
 
   @override
   Future<void> refuser(String id, {String? motif}) async => refus[id] = motif;
@@ -448,6 +457,32 @@ void main() {
       await tester.tap(find.text('Voir la mission'));
       await _settle(tester);
       expect(find.text("Terminer l'abonnement"), findsOneWidget);
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('Nouvelle demande reçue en direct : signalée', (tester) async {
+      await ouvrirMissions(tester);
+      expect(find.text('À traiter (1)'), findsOneWidget);
+
+      _sollicitations.missions = [
+        ..._sollicitations.missions,
+        Sollicitation.fromMap({
+          'id': '514',
+          'prestataire_id': 'u1',
+          'citoyen_id': 'c2',
+          'numero_citoyen': '+237677000001',
+          'statut': 'en_attente',
+          'service': 'linge',
+          'formule': 'ponctuelle',
+          'prix_total': 2600,
+        }),
+      ];
+      _sollicitations.direct.add(null);
+      await tester.pump(const Duration(milliseconds: 500));
+      await _settle(tester);
+      expect(find.text('À traiter (2)'), findsOneWidget);
+      expect(find.text('Nouvelle demande reçue.'), findsOneWidget);
+      expect(find.text('Voir'), findsOneWidget);
       await tester.pumpWidget(const SizedBox());
     });
 

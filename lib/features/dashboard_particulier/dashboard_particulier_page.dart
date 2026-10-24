@@ -124,6 +124,7 @@ class _DashboardParticulierPageState
     super.initState();
     _loadData();
     _fetchSollicitations();
+    _ecouterEnDirect();
     _clock = Timer.periodic(const Duration(minutes: 1), (t) {
       if (mounted && _selectedIndex == 1) setState(() {});
     });
@@ -132,6 +133,10 @@ class _DashboardParticulierPageState
   @override
   void dispose() {
     _clock?.cancel();
+    _relecture?.cancel();
+    for (final s in _direct) {
+      s.cancel();
+    }
     _nomController.dispose();
     _prenomController.dispose();
     _phoneController.dispose();
@@ -209,6 +214,32 @@ class _DashboardParticulierPageState
     }
   }
 
+  final _direct = <StreamSubscription<void>>[];
+  Timer? _relecture;
+
+  /// Nouvelle demande, annulation, réponse à un ajustement : la liste se
+  /// relit d'elle-même (temps réel, migration 015).
+  void _ecouterEnDirect() {
+    if (_userId.isEmpty) return;
+    for (final flux in [
+      ref.read(sollicitationRepositoryProvider).changementsPrestataire(_userId),
+      ref.read(demandeRepositoryProvider).changementsSuivi('ajustements'),
+    ]) {
+      _direct.add(flux.listen(
+        (_) {
+          // Plusieurs signaux arrivent souvent ensemble : une seule relecture.
+          _relecture?.cancel();
+          _relecture =
+              Timer(const Duration(milliseconds: 400), _fetchSollicitations);
+        },
+        onError: (Object _) {},
+      ));
+    }
+  }
+
+  /// Demandes en attente déjà vues : sert à signaler les nouvelles.
+  Set<String>? _demandesVues;
+
   Future<void> _fetchSollicitations() async {
     if (_userId.isEmpty) return;
     try {
@@ -216,6 +247,23 @@ class _DashboardParticulierPageState
           .read(sollicitationRepositoryProvider)
           .fetchForPrestataire(_userId, pageSize: 50);
       if (mounted) {
+        final enAttente = {
+          for (final r in rows)
+            if (r.statut == 'en_attente') r.id
+        };
+        final nouvelles = _demandesVues == null
+            ? 0
+            : enAttente.difference(_demandesVues!).length;
+        _demandesVues = enAttente;
+        if (nouvelles > 0) {
+          showAppSnackBar(
+              context,
+              nouvelles > 1
+                  ? '$nouvelles nouvelles demandes reçues.'
+                  : 'Nouvelle demande reçue.',
+              isError: false,
+              action: () => _openMissions(0));
+        }
         setState(() {
           sollicitations = rows;
           _generateGraphSpots();

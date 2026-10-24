@@ -160,9 +160,7 @@ String fcfa(int montant) {
 String duree(int minutes) {
   if (minutes < 60) return '$minutes min';
   final h = minutes ~/ 60, m = minutes % 60;
-  return m == 0
-      ? '$h h'
-      : '$h h ${m.toString().padLeft(2, '0')}';
+  return m == 0 ? '$h h' : '$h h ${m.toString().padLeft(2, '0')}';
 }
 
 String _nombre(int n, String un, String plusieurs) =>

@@ -15,6 +15,9 @@ class AppTextField extends StatelessWidget {
   final Iterable<String>? autofillHints;
   final TextInputAction? textInputAction;
 
+  /// Touche de validation du clavier (« OK », « Envoyer »).
+  final ValueChanged<String>? onFieldSubmitted;
+
   const AppTextField({
     super.key,
     required this.controller,
@@ -28,6 +31,7 @@ class AppTextField extends StatelessWidget {
     this.enabled = true,
     this.autofillHints,
     this.textInputAction,
+    this.onFieldSubmitted,
   });
 
   @override
@@ -40,6 +44,7 @@ class AppTextField extends StatelessWidget {
       enabled: enabled,
       autofillHints: autofillHints,
       textInputAction: textInputAction,
+      onFieldSubmitted: onFieldSubmitted,
       decoration: InputDecoration(
         labelText: label,
         helperText: helperText,

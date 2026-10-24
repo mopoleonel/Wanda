@@ -3,8 +3,9 @@ import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 
 /// Snackbar standard (succès / erreur) : fond encre, icône colorée.
+/// [action] : bouton facultatif (« Voir ») qui mène droit à la suite.
 void showAppSnackBar(BuildContext context, String message,
-    {bool isError = true}) {
+    {bool isError = true, String? actionLabel, VoidCallback? action}) {
   if (!context.mounted) return;
   ScaffoldMessenger.of(context)
     ..hideCurrentSnackBar()
@@ -25,6 +26,13 @@ void showAppSnackBar(BuildContext context, String message,
           ],
         ),
         margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        action: action == null
+            ? null
+            : SnackBarAction(
+                label: actionLabel ?? 'Voir',
+                textColor: AppColors.brandLeaf,
+                onPressed: action,
+              ),
       ),
     );
 }

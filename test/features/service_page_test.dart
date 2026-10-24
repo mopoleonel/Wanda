@@ -103,6 +103,11 @@ const _citoyen = Citoyen(
 class _FakeDemandes extends Fake implements DemandeRepository {
   List<Ajustement> enAttente = const [];
   final reponses = <String, bool>{};
+  final suivi = StreamController<void>.broadcast();
+
+  @override
+  Stream<void> changementsSuivi(String table) =>
+      table == 'ajustements' ? suivi.stream : const Stream.empty();
 
   @override
   Future<List<Ajustement>> ajustements(List<String> ids) async =>
@@ -334,6 +339,44 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
+  testWidgets('Ajustement demandé pendant que le client regarde : affiché',
+      (tester) async {
+    tallScreen(tester);
+    await tester.pumpWidget(h.app());
+    await tester.tap(find.text('Mes demandes'));
+    await _settle(tester);
+    h.sollicitations.controller.add([
+      Sollicitation.fromMap({
+        'id': 'd9',
+        'prestataire_id': 'p1',
+        'citoyen_id': 'c1',
+        'statut': 'accepte',
+        'service': 'linge',
+        'formule': 'ponctuelle',
+        'prix_total': 2600,
+      }),
+    ]);
+    await _settle(tester);
+    expect(find.text('AJUSTEMENT'), findsNothing);
+
+    h.demandes.enAttente = [
+      const Ajustement(
+          id: 'aj2',
+          sollicitationId: 'd9',
+          minutesSupp: 30,
+          produitsSupp: 500,
+          motif: 'Draps en plus',
+          photos: [],
+          prixSupp: 1100,
+          statut: 'en_attente'),
+    ];
+    h.demandes.suivi.add(null);
+    await _settle(tester);
+    expect(find.text('AJUSTEMENT'), findsOneWidget);
+    expect(find.text('« Draps en plus »'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+  });
+
   testWidgets('Demande refusée : « Choisir un autre prestataire » la reprend',
       (tester) async {
     tallScreen(tester);
@@ -450,6 +493,60 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
+  testWidgets('Le prestataire confirme : le client est prévenu, avec « Voir »',
+      (tester) async {
+    tallScreen(tester);
+    await tester.pumpWidget(h.app());
+    Sollicitation fiche(String statut) => Sollicitation(
+          id: 'cafe01',
+          prestataireId: 'p1',
+          citoyenId: 'c1',
+          nomCitoyen: 'Mbarga',
+          numeroCitoyen: '+237677000000',
+          statut: statut,
+          dateSollicitation: DateTime.now(),
+          expert: const SollicitationExpert(
+              nom: 'Kamga', prenom: 'Paul', services: ['menage']),
+        );
+    h.sollicitations.controller.add([fiche('en_attente')]);
+    await _settle(tester);
+    expect(find.textContaining('a confirmé'), findsNothing);
+
+    h.sollicitations.controller.add([fiche('accepte')]);
+    await _settle(tester);
+    expect(find.text('Paul a confirmé votre demande N° CAFE01.'),
+        findsOneWidget);
+    await tester.tap(find.text('Voir'));
+    await _settle(tester);
+    expect(find.textContaining('1 demande en cours'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('Fiches classées : repliées dans un historique', (tester) async {
+    tallScreen(tester);
+    await tester.pumpWidget(h.app());
+    await tester.tap(find.text('Mes demandes'));
+    await _settle(tester);
+    Sollicitation fiche(String id, String statut) => Sollicitation.fromMap({
+          'id': id,
+          'prestataire_id': 'p1',
+          'citoyen_id': 'c1',
+          'statut': statut,
+          'service': 'menage',
+          'formule': 'ponctuelle',
+        });
+    h.sollicitations.controller
+        .add([fiche('aaaa01', 'accepte'), fiche('bbbb02', 'archive')]);
+    await _settle(tester);
+
+    expect(find.text('N° AAAA01'), findsOneWidget);
+    expect(find.text('N° BBBB02'), findsNothing);
+    await tester.tap(find.text('Historique · 1 fiche'));
+    await _settle(tester);
+    expect(find.text('N° BBBB02'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+  });
+
   testWidgets('Mes demandes : tirer pour rafraîchir se réabonne',
       (tester) async {
     tallScreen(tester);
@@ -459,9 +556,7 @@ void main() {
     h.sollicitations.controller.add(const []);
     await _settle(tester);
 
-    tester
-        .state<RefreshIndicatorState>(find.byType(RefreshIndicator))
-        .show();
+    tester.state<RefreshIndicatorState>(find.byType(RefreshIndicator)).show();
     for (var i = 0; i < 3; i++) {
       await tester.pump(const Duration(seconds: 1));
     }

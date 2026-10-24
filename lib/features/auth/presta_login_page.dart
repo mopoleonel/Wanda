@@ -385,7 +385,9 @@ class _LoginPrestaPageState extends ConsumerState<LoginPrestaPage> {
         icon: Icons.phone_iphone_rounded,
         keyboardType: TextInputType.phone,
         autofillHints: const [AutofillHints.telephoneNumber],
-        textInputAction: TextInputAction.next,
+        textInputAction:
+            _step == _Step.phone ? TextInputAction.send : TextInputAction.next,
+        onFieldSubmitted: _step == _Step.phone ? (_) => _sendCode() : null,
         helperText: _step == _Step.phone
             ? 'Ex : 699 00 00 00. Votre numéro WhatsApp, où les clients vous joignent.'
             : null,

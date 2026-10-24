@@ -357,6 +357,9 @@ class _LoginCitoyenPageState extends ConsumerState<LoginCitoyenPage> {
           icon: Icons.phone_iphone_rounded,
           keyboardType: TextInputType.phone,
           autofillHints: const [AutofillHints.telephoneNumber],
+          // La touche « OK » du clavier envoie le code, sans chercher le bouton.
+          textInputAction: TextInputAction.send,
+          onFieldSubmitted: (_) => _sendCode(),
           helperText:
               'Ex : 699 00 00 00. Sans indicatif, le +$kDefaultCountryCode (Cameroun) est ajouté.',
           validator: (v) =>

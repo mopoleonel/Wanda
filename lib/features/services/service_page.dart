@@ -80,6 +80,8 @@ class _ServicePageState extends ConsumerState<ServicePage> {
   bool _providersError = false;
 
   StreamSubscription<List<Sollicitation>>? _ordersSub;
+  final _suiviSubs = <StreamSubscription<void>>[];
+  bool _historiqueOuvert = false;
   List<Sollicitation>? _orders;
   bool _ordersError = false;
 
@@ -101,6 +103,7 @@ class _ServicePageState extends ConsumerState<ServicePage> {
     _fetchMyPosition();
     _listenProviders();
     _listenOrders();
+    _listenSuivi();
     PrestataireMarkerFactory.buildUser().then((icon) {
       if (mounted) setState(() => _userIcon = icon);
     });
@@ -115,6 +118,9 @@ class _ServicePageState extends ConsumerState<ServicePage> {
     _clock?.cancel();
     _providersSub?.cancel();
     _ordersSub?.cancel();
+    for (final s in _suiviSubs) {
+      s.cancel();
+    }
     _nomController.dispose();
     _prenomController.dispose();
     _phoneController.dispose();
@@ -467,6 +473,7 @@ class _ServicePageState extends ConsumerState<ServicePage> {
         .listen(
       (orders) {
         if (mounted) {
+          _signalerChangements(orders);
           setState(() {
             _orders = orders;
             _ordersError = false;
@@ -478,6 +485,59 @@ class _ServicePageState extends ConsumerState<ServicePage> {
         if (mounted) setState(() => _ordersError = true);
       },
     );
+  }
+
+  /// Statut connu de chaque demande, pour annoncer ce que fait le prestataire.
+  Map<String, String>? _statutsVus;
+
+  /// Le prestataire confirme, refuse ou termine : on le dit au client, avec
+  /// un bouton qui mène directement à la suite.
+  void _signalerChangements(List<Sollicitation> orders) {
+    final avant = _statutsVus;
+    _statutsVus = {for (final o in orders) o.id: o.statut};
+    if (avant == null) return;
+    for (final o in orders) {
+      final ancien = avant[o.id];
+      if (ancien == null || ancien == o.statut) continue;
+      final prenom = o.expert?.prenom?.trim() ?? '';
+      final qui = prenom.isNotEmpty ? prenom : 'Le prestataire';
+      final (String message, VoidCallback action, String label) =
+          switch (o.statut) {
+        'accepte' => (
+            '$qui a confirmé votre demande ${ficheNumber(o.id)}.',
+            () => setState(() => _selectedIndex = 1),
+            'Voir',
+          ),
+        'refuse' => (
+            "$qui n'est pas disponible pour ${ficheNumber(o.id)}.",
+            () => _reprendre(o),
+            'Autre prestataire',
+          ),
+        'termine' => (
+            'Mission ${ficheNumber(o.id)} terminée : notez $qui.',
+            () => _ratingModal(o),
+            'Noter',
+          ),
+        _ => ('', () {}, ''),
+      };
+      if (message.isEmpty) continue;
+      showAppSnackBar(context, message,
+          isError: false, actionLabel: label, action: action);
+      return;
+    }
+  }
+
+  /// Un ajustement demandé ou un passage pointé ne modifie pas la demande :
+  /// on écoute ces tables à part pour que le client le voie aussitôt.
+  void _listenSuivi() {
+    final repo = ref.read(demandeRepositoryProvider);
+    for (final table in const ['ajustements', 'passages']) {
+      _suiviSubs.add(repo.changementsSuivi(table).listen(
+            (_) => _chargerSuivi(_orders ?? const []),
+            // Sans temps réel, le suivi se met à jour au rafraîchissement.
+            onError: (Object _) {},
+          ));
+    }
   }
 
   /// Ajustements en attente et passages d'abonnement des demandes en cours.
@@ -835,7 +895,10 @@ class _ServicePageState extends ConsumerState<ServicePage> {
   }
 
   Widget _buildHeader(int onlineCount, bool isLoading) {
-    final prenom = _prenomController.text.trim();
+    // Le nom saisi au récapitulatif suffit quand le prénom manque.
+    final prenom = _prenomController.text.trim().isNotEmpty
+        ? _prenomController.text.trim()
+        : _nomController.text.trim();
     return Letterhead(
       overline: prenom.isNotEmpty ? 'Bonjour, $prenom' : 'Bonjour',
       title: 'De quoi avez-vous besoin ?',
@@ -1227,6 +1290,11 @@ class _ServicePageState extends ConsumerState<ServicePage> {
             compte((s) => !const ['archive', 'annule', 'termine'].contains(s));
         final aNoter = compte((s) => s == 'termine');
         final aussi = aNoter > 0 ? ', $aNoter à noter' : '';
+        // Les fiches classées ou annulées passent dans un historique replié.
+        bool ancienne(Sollicitation o) =>
+            o.statut == 'archive' || o.statut == 'annule';
+        final actives = [...?orders?.where((o) => !ancienne(o))];
+        final anciennes = [...?orders?.where(ancienne)];
         return RefreshIndicator(
           onRefresh: () async => _listenOrders(),
           child: CustomScrollView(
@@ -1264,40 +1332,76 @@ class _ServicePageState extends ConsumerState<ServicePage> {
                       ),
                     ),
                   )
-                else
-                  SliverPadding(
-                    padding: const EdgeInsets.fromLTRB(AppSpace.gutter,
-                        AppSpace.xl, AppSpace.gutter, AppSpace.xl),
-                    sliver: SliverList.separated(
-                      itemCount: orders.length,
-                      separatorBuilder: (_, __) =>
-                          const SizedBox(height: AppSpace.md),
-                      itemBuilder: (context, i) {
-                        final o = orders[i];
-                        return _OrderFiche(
-                          order: o,
-                          ajustement: _ajustements[o.id],
-                          passages: _passages[o.id],
-                          onRepondre: _repondreAjustement,
-                          onVoirPhoto: _voirPhoto,
-                          onReprendre: () => _reprendre(o),
-                          timerLabel: _getTimerOrEnd(o),
-                          canCancel: _canCancel(o),
-                          onCall: () => _call(o.expert?.telephone),
-                          onArchive: () => _archiveOrder(o.id),
-                          onCancelPressed: () => _showCancelAlert(o),
-                          onTimeWarning: () =>
-                              _showTimeWarning(o.dateSollicitation),
-                          onRate: () => _ratingModal(o),
-                        );
-                      },
+                else ...[
+                  if (actives.isEmpty)
+                    SliverToBoxAdapter(
+                      child: EmptyStateView(
+                        icon: Icons.receipt_long_rounded,
+                        title: 'Aucune demande en cours',
+                        subtitle:
+                            "Vos fiches classées restent dans l'historique.",
+                        action: FilledButton(
+                          onPressed: () => setState(() => _selectedIndex = 0),
+                          child: const Text('Réserver un service'),
+                        ),
+                      ),
+                    )
+                  else
+                    _listeFiches(actives),
+                  if (anciennes.isNotEmpty) ...[
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: AppSpace.gutter),
+                        child: TextButton.icon(
+                          onPressed: () => setState(
+                              () => _historiqueOuvert = !_historiqueOuvert),
+                          icon: Icon(_historiqueOuvert
+                              ? Icons.expand_less_rounded
+                              : Icons.history_rounded),
+                          label: Text(_historiqueOuvert
+                              ? "Masquer l'historique"
+                              : 'Historique · ${anciennes.length} fiche${anciennes.length > 1 ? 's' : ''}'),
+                        ),
+                      ),
                     ),
-                  ),
+                    if (_historiqueOuvert) _listeFiches(anciennes),
+                  ],
+                  const SliverToBoxAdapter(
+                      child: SizedBox(height: AppSpace.xl)),
+                ],
               ]),
         );
       },
     );
   }
+
+  Widget _listeFiches(List<Sollicitation> fiches) => SliverPadding(
+        padding: const EdgeInsets.fromLTRB(
+            AppSpace.gutter, AppSpace.xl, AppSpace.gutter, AppSpace.md),
+        sliver: SliverList.separated(
+          itemCount: fiches.length,
+          separatorBuilder: (_, __) => const SizedBox(height: AppSpace.md),
+          itemBuilder: (context, i) {
+            final o = fiches[i];
+            return _OrderFiche(
+              order: o,
+              ajustement: _ajustements[o.id],
+              passages: _passages[o.id],
+              onRepondre: _repondreAjustement,
+              onVoirPhoto: _voirPhoto,
+              onReprendre: () => _reprendre(o),
+              timerLabel: _getTimerOrEnd(o),
+              canCancel: _canCancel(o),
+              onCall: () => _call(o.expert?.telephone),
+              onArchive: () => _archiveOrder(o.id),
+              onCancelPressed: () => _showCancelAlert(o),
+              onTimeWarning: () => _showTimeWarning(o.dateSollicitation),
+              onRate: () => _ratingModal(o),
+            );
+          },
+        ),
+      );
 
   // ================= DIALOGUES =================
 
