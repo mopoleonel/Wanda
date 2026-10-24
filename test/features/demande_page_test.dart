@@ -62,6 +62,7 @@ class _FakeDemandes extends Fake implements DemandeRepository {
       'paniers': demande.entier(Q.paniers),
       'photos': photos,
       'creneau': creneau,
+      'date': date,
     });
     return 'nouvelle';
   }
@@ -310,6 +311,7 @@ void main() {
       'paniers': 3,
       'photos': ['c1/d/1.jpg'],
       'creneau': Creneau.apresMidi,
+      'date': h.demandes.creees.single['date'],
     });
     expect(h.retour, isTrue, reason: 'retour à « Mes demandes »');
     await _fin(tester);
@@ -384,6 +386,32 @@ void main() {
     await _settle(tester);
     expect(h.profils.nomEnregistre, 'Atangana');
     expect(h.demandes.creees, hasLength(1));
+    await _fin(tester);
+  });
+
+  testWidgets('Reprise : sans le prestataire qui a refusé, même jour et créneau',
+      (tester) async {
+    grandEcran(tester);
+    h.prestataires.liste = [_awa, _ben];
+    final apresDemain = DateTime.now().add(const Duration(days: 2));
+    await _ouvrir(
+        tester,
+        h,
+        DemandeArgs(CategorieService.linge,
+            reprise: DemandeMenage.initiale(CategorieService.linge),
+            photosEnvoyees: const ['c1/d/1.jpg'],
+            exclu: 'p2',
+            date: apresDemain,
+            creneau: Creneau.apresMidi));
+
+    expect(find.text('Awa Ngo'), findsNothing);
+    expect(find.text('Ben Eto'), findsOneWidget);
+    await tester.tap(find.text('Réserver').last);
+    await _settle(tester);
+    final c = h.demandes.creees.single;
+    expect(c['prestataire'], 'p3');
+    expect(c['creneau'], Creneau.apresMidi);
+    expect((c['date'] as DateTime).day, apresDemain.day);
     await _fin(tester);
   });
 

@@ -1686,7 +1686,7 @@ class _MissionFiche extends StatelessWidget {
                             if (quand.isNotEmpty) 'Prévu $quand',
                             if (item.minutesEstimees != null)
                               '≈ ${duree(item.minutesEstimees!)}',
-                          ].whereType<String>().join(' · '),
+                          ].whereType<String>().join(sepDetail),
                           style: AppText.caption),
                     ],
                   ),
@@ -2328,6 +2328,14 @@ class _DialogueRefus extends StatefulWidget {
 class _DialogueRefusState extends State<_DialogueRefus> {
   final _motif = TextEditingController();
 
+  /// Motifs fréquents : un toucher suffit, sans clavier.
+  static const _motifsRapides = [
+    'Pas disponible ce jour-là',
+    'Trop loin de chez moi',
+    'Créneau déjà pris',
+    'Travail hors de mes services',
+  ];
+
   @override
   void dispose() {
     _motif.dispose();
@@ -2343,13 +2351,22 @@ class _DialogueRefusState extends State<_DialogueRefus> {
           const Text(
               'Le client sera prévenu et pourra choisir un autre prestataire.'),
           const SizedBox(height: AppSpace.md),
+          Wrap(spacing: AppSpace.sm, runSpacing: AppSpace.sm, children: [
+            for (final m in _motifsRapides)
+              ChoiceChip(
+                label: Text(m),
+                selected: _motif.text == m,
+                onSelected: (_) => setState(() => _motif.text = m),
+              ),
+          ]),
+          const SizedBox(height: AppSpace.md),
           TextField(
             controller: _motif,
+            onChanged: (_) => setState(() {}),
             maxLength: 120,
             textCapitalization: TextCapitalization.sentences,
-            decoration: const InputDecoration(
-                labelText: 'Motif (facultatif)',
-                hintText: 'Ex. : pas disponible ce jour-là'),
+            decoration:
+                const InputDecoration(labelText: 'Autre motif (facultatif)'),
           ),
         ]),
       ),

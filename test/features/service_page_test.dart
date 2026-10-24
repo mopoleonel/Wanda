@@ -11,6 +11,7 @@ import 'package:wanda/data/models/ajustement.dart';
 import 'package:wanda/data/models/avis_prestataire.dart';
 import 'package:wanda/data/models/categorie_service.dart';
 import 'package:wanda/data/models/citoyen.dart';
+import 'package:wanda/data/models/demande_menage.dart';
 import 'package:wanda/data/models/particulier.dart';
 import 'package:wanda/data/models/sollicitation.dart';
 import 'package:wanda/data/repositories/auth_repository.dart';
@@ -395,6 +396,8 @@ void main() {
         'reponses': {'paniers': 3},
         'photos': ['c1/d/1.jpg'],
         'prix_total': 5000,
+        'date_souhaitee': '2026-12-02',
+        'creneau': 'apres_midi',
       }),
     ]);
     await _settle(tester);
@@ -405,6 +408,9 @@ void main() {
     await _settle(tester);
     expect(h.reservation!.reprise!.entier('paniers'), 3);
     expect(h.reservation!.photosEnvoyees, ['c1/d/1.jpg']);
+    expect(h.reservation!.exclu, 'p1');
+    expect(h.reservation!.creneau, Creneau.apresMidi);
+    expect(h.reservation!.date, DateTime(2026, 12, 2));
     await tester.pumpWidget(const SizedBox());
   });
 

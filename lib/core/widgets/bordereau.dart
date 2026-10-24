@@ -138,6 +138,10 @@ class _StampFace extends StatelessWidget {
   }
 }
 
+/// Séparateur « · » des lignes de détail : collé au mot qui précède, pour
+/// qu'un retour à la ligne ne laisse jamais un point orphelin en tête.
+const sepDetail = ' · ';
+
 /// « N° 004213 » : identifiant lisible d'une fiche, dérivé de son id
 /// (numérique ou uuid) pour que le citoyen puisse la citer au téléphone.
 String ficheNumber(String id) {

@@ -412,6 +412,20 @@ void main() {
       await tester.pumpWidget(const SizedBox());
     });
 
+    testWidgets('Refuser : motif choisi en un toucher', (tester) async {
+      await ouvrirMissions(tester);
+      await tester.tap(find.text('Voir la demande et répondre'));
+      await _settle(tester);
+      await tester.tap(find.widgetWithText(OutlinedButton, 'Refuser'));
+      await _settle(tester);
+      await tester.tap(find.text('Trop loin de chez moi'));
+      await tester.pump();
+      await tester.tap(find.widgetWithText(FilledButton, 'Refuser'));
+      await _settle(tester);
+      expect(_demandes.refus, {'512': 'Trop loin de chez moi'});
+      await tester.pumpWidget(const SizedBox());
+    });
+
     testWidgets('Mission confirmée : ajustement chiffré puis envoyé',
         (tester) async {
       await ouvrirMissions(tester);

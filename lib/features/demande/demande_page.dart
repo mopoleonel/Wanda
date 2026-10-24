@@ -45,12 +45,21 @@ class DemandeArgs {
   final List<String> photosEnvoyees;
   final String? analyseId;
 
+  /// Reprise : le prestataire qui a refusé n'est plus proposé, et le jour et
+  /// le créneau demandés sont conservés.
+  final String? exclu;
+  final DateTime? date;
+  final Creneau? creneau;
+
   const DemandeArgs(
     this.service, {
     this.prestataire,
     this.reprise,
     this.photosEnvoyees = const [],
     this.analyseId,
+    this.exclu,
+    this.date,
+    this.creneau,
   });
 }
 
@@ -111,7 +120,12 @@ class _DemandePageState extends ConsumerState<DemandePage> {
     _demande = a.reprise ?? DemandeMenage.initiale(a.service);
     _choisi = a.prestataire;
     final now = DateTime.now();
-    _date = DateTime(now.year, now.month, now.day + 1);
+    final aujourdhui = DateTime(now.year, now.month, now.day);
+    // Jour d'origine s'il n'est pas passé, sinon demain.
+    _date = a.date != null && !a.date!.isBefore(aujourdhui)
+        ? DateTime(a.date!.year, a.date!.month, a.date!.day)
+        : aujourdhui.add(const Duration(days: 1));
+    if (a.creneau != null) _creneau = a.creneau!;
     _chargerTarifs();
     if (a.reprise != null && a.photosEnvoyees.isNotEmpty) {
       _chemins = a.photosEnvoyees;
@@ -282,7 +296,11 @@ class _DemandePageState extends ConsumerState<DemandePage> {
     try {
       final liste = await ref
           .read(prestataireRepositoryProvider)
-          .disponiblesPour(_demande.service.code);
+          .disponiblesPour(_demande.service.code)
+          .then((l) => [
+                for (final p in l)
+                  if (p.id != widget.args.exclu) p
+              ]);
       if (!mounted) return;
       // La liste s'affiche tout de suite ; notes et distances complètent.
       setState(() {
@@ -773,7 +791,9 @@ class _DemandePageState extends ConsumerState<DemandePage> {
     if (liste.isEmpty) {
       return EmptyStateView(
         icon: Icons.person_search_rounded,
-        title: 'Personne en ligne pour ce service',
+        title: widget.args.exclu != null
+            ? 'Aucun autre prestataire en ligne'
+            : 'Personne en ligne pour ce service',
         subtitle:
             'Réessayez un peu plus tard : les prestataires se connectent tout au long de la journée.',
         action: OutlinedButton(

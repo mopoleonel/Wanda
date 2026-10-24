@@ -35,54 +35,75 @@ class DetailMission extends ConsumerWidget {
       expand: false,
       initialChildSize: 0.9,
       maxChildSize: 0.95,
-      builder: (context, controller) => ListView(
-        controller: controller,
-        padding: const EdgeInsets.fromLTRB(
-            AppSpace.gutter, 0, AppSpace.gutter, AppSpace.xl),
-        children: [
-          Row(children: [
-            FicheNumber(m.id, color: AppColors.ink),
-            const Spacer(),
-            StatusStamp(FicheStatus.sollicitation(m.statut)),
-          ]),
-          const SizedBox(height: AppSpace.md),
-          if (d != null) ...[
-            EnteteService(d),
-            const SizedBox(height: AppSpace.md),
-            for (final l in d.resumeReponses())
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 2),
-                child: Text(l, style: AppText.body),
-              ),
-            const Divider(height: AppSpace.xl),
-            _Ligne('Prévu', m.quand),
-            if (m.minutesEstimees != null)
-              _Ligne('Durée estimée', duree(m.minutesEstimees!)),
-            if (m.prixTotal != null)
-              _Ligne(
-                  m.formule == Formule.abonnement
-                      ? 'Prix par mois'
-                      : 'Prix fixé par WANDA',
-                  fcfa(m.prixTotal!),
-                  fort: true),
-            _Ligne('Client', client.isEmpty ? 'Client WANDA' : client),
-            if (m.photos.isNotEmpty) ...[
-              const SectionTitle('Photos du client',
-                  padding:
-                      EdgeInsets.only(top: AppSpace.lg, bottom: AppSpace.sm)),
-              _Photos(chemins: m.photos),
+      builder: (context, controller) => Column(children: [
+        Expanded(
+          child: ListView(
+            controller: controller,
+            padding: const EdgeInsets.fromLTRB(
+                AppSpace.gutter, 0, AppSpace.gutter, AppSpace.xl),
+            children: [
+              Row(children: [
+                FicheNumber(m.id, color: AppColors.ink),
+                const Spacer(),
+                StatusStamp(FicheStatus.sollicitation(m.statut)),
+              ]),
+              const SizedBox(height: AppSpace.md),
+              if (d != null) ...[
+                EnteteService(d),
+                const SizedBox(height: AppSpace.md),
+                for (final l in d.resumeReponses())
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 2),
+                    child: Text(l, style: AppText.body),
+                  ),
+                const Divider(height: AppSpace.xl),
+                _Ligne('Prévu', m.quand),
+                if (m.minutesEstimees != null)
+                  _Ligne('Durée estimée', duree(m.minutesEstimees!)),
+                if (m.prixTotal != null)
+                  _Ligne(
+                      m.formule == Formule.abonnement
+                          ? 'Prix par mois'
+                          : 'Prix fixé par WANDA',
+                      fcfa(m.prixTotal!),
+                      fort: true),
+                _Ligne('Client', client.isEmpty ? 'Client WANDA' : client),
+                if (m.photos.isNotEmpty) ...[
+                  const SectionTitle('Photos du client',
+                      padding: EdgeInsets.only(
+                          top: AppSpace.lg, bottom: AppSpace.sm)),
+                  _Photos(chemins: m.photos),
+                ],
+                const SectionTitle('Vérification des photos',
+                    padding:
+                        EdgeInsets.only(top: AppSpace.lg, bottom: AppSpace.sm)),
+                _ResumeIa(m.analyseIa),
+              ] else
+                Text('Demande sans détail (créée avant les services ménagers).',
+                    style: AppText.body),
             ],
-            const SectionTitle('Vérification des photos',
-                padding:
-                    EdgeInsets.only(top: AppSpace.lg, bottom: AppSpace.sm)),
-            _ResumeIa(m.analyseIa),
-          ] else
-            Text('Demande sans détail (créée avant les services ménagers).',
-                style: AppText.body),
-          const SizedBox(height: AppSpace.xl),
-          ...actions,
-        ],
-      ),
+          ),
+        ),
+        // Boutons toujours visibles, au-dessus de la barre de navigation :
+        // pas besoin de faire défiler les photos pour répondre.
+        if (actions.isNotEmpty)
+          DecoratedBox(
+            decoration: const BoxDecoration(
+              color: AppColors.surface,
+              border: Border(top: BorderSide(color: AppColors.rule)),
+            ),
+            child: SafeArea(
+              top: false,
+              minimum: const EdgeInsets.fromLTRB(
+                  AppSpace.gutter, AppSpace.md, AppSpace.gutter, AppSpace.md),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: actions,
+              ),
+            ),
+          ),
+      ]),
     );
   }
 }
@@ -138,39 +159,45 @@ class _PhotosState extends ConsumerState<_Photos> {
       future: _urls,
       builder: (context, snap) {
         final urls = snap.data;
-        return Row(children: [
-          for (var i = 0; i < widget.chemins.length; i++) ...[
-            if (i > 0) const SizedBox(width: AppSpace.sm),
-            Expanded(
-              child: AspectRatio(
-                aspectRatio: 3 / 4,
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(AppRadius.field),
-                  child: urls == null
-                      ? const ColoredBox(color: AppColors.surfaceSunk)
-                      : urls[i] == null
-                          ? const ColoredBox(
-                              color: AppColors.surfaceSunk,
-                              child: Icon(Icons.broken_image_outlined,
-                                  color: AppColors.inkMuted))
-                          : Semantics(
-                              button: true,
-                              label: 'Agrandir la photo ${i + 1}',
-                              child: InkWell(
-                                onTap: () => _agrandir(urls[i]!),
-                                child: Image.network(urls[i]!,
-                                    fit: BoxFit.cover,
-                                    cacheWidth: 400,
-                                    errorBuilder: (_, __, ___) =>
-                                        const ColoredBox(
-                                            color: AppColors.surfaceSunk)),
+        // Vignettes au tiers de la largeur, même pour une seule photo :
+        // un toucher l'agrandit.
+        return LayoutBuilder(builder: (context, box) {
+          final largeur = (box.maxWidth - 2 * AppSpace.sm) / 3;
+          return Row(children: [
+            for (var i = 0; i < widget.chemins.length; i++) ...[
+              if (i > 0) const SizedBox(width: AppSpace.sm),
+              SizedBox(
+                width: largeur,
+                child: AspectRatio(
+                  aspectRatio: 3 / 4,
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(AppRadius.field),
+                    child: urls == null
+                        ? const ColoredBox(color: AppColors.surfaceSunk)
+                        : urls[i] == null
+                            ? const ColoredBox(
+                                color: AppColors.surfaceSunk,
+                                child: Icon(Icons.broken_image_outlined,
+                                    color: AppColors.inkMuted))
+                            : Semantics(
+                                button: true,
+                                label: 'Agrandir la photo ${i + 1}',
+                                child: InkWell(
+                                  onTap: () => _agrandir(urls[i]!),
+                                  child: Image.network(urls[i]!,
+                                      fit: BoxFit.cover,
+                                      cacheWidth: 400,
+                                      errorBuilder: (_, __, ___) =>
+                                          const ColoredBox(
+                                              color: AppColors.surfaceSunk)),
+                                ),
                               ),
-                            ),
+                  ),
                 ),
               ),
-            ),
-          ],
-        ]);
+            ],
+          ]);
+        });
       },
     );
   }
@@ -215,7 +242,7 @@ class _ResumeIa extends StatelessWidget {
             : '${a.quantiteMin}',
       if (a.niveau != null) a.niveau!.replaceAll('_', ' '),
       if (a.nuisible != null) a.nuisible!,
-    ].join(' · ');
+    ].join(sepDetail);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [

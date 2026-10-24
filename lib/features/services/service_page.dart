@@ -644,7 +644,12 @@ class _ServicePageState extends ConsumerState<ServicePage> {
     final d = o.demande;
     if (d == null) return;
     _reserver(DemandeArgs(d.service,
-        reprise: d, photosEnvoyees: o.photos, analyseId: null));
+        reprise: d,
+        photosEnvoyees: o.photos,
+        analyseId: null,
+        exclu: o.prestataireId,
+        date: o.dateSouhaitee,
+        creneau: o.creneau));
   }
 
   // ================= UTILS =================
@@ -1061,7 +1066,13 @@ class _ServicePageState extends ConsumerState<ServicePage> {
         button: true,
         label: 'Suivre ma demande : $detail',
         child: FicheCard(
-          onTap: () => setState(() => _selectedIndex = 1),
+          // La carte mène droit à ce qu'elle annonce : noter, choisir un
+          // autre prestataire, ou sinon la fiche dans « Mes demandes ».
+          onTap: o == aNoter && aj == null
+              ? () => _ratingModal(o)
+              : o == refusee && aj == null
+                  ? () => _reprendre(o)
+                  : () => setState(() => _selectedIndex = 1),
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           child: Row(children: [
             Container(
@@ -2330,7 +2341,7 @@ class _ResumeDemande extends StatelessWidget {
                     if (quand != null) 'Prévu $quand',
                     if (passages != null)
                       '$passages passage${passages! > 1 ? 's' : ''} effectué${passages! > 1 ? 's' : ''}',
-                  ].whereType<String>().join(' · '),
+                  ].whereType<String>().join(sepDetail),
                   style: AppText.caption),
             ],
           ),
