@@ -23,7 +23,7 @@ class SollicitationRepository {
         'nom_citoyen': nomCitoyen,
         'prenom_citoyen': prenomCitoyen,
         'numero_citoyen': numeroCitoyen,
-        'date_sollicitation': DateTime.now().toIso8601String(),
+        'date_sollicitation': DateTime.now().toUtc().toIso8601String(),
         'statut': 'en_attente',
       }).timeout(const Duration(seconds: 15));
     } catch (e, st) {
@@ -89,7 +89,9 @@ class SollicitationRepository {
       {DateTime? dateFin}) async {
     try {
       final update = <String, dynamic>{'statut': status};
-      if (dateFin != null) update['date_fin'] = dateFin.toIso8601String();
+      if (dateFin != null) {
+        update['date_fin'] = dateFin.toUtc().toIso8601String();
+      }
       await _client.from('sollicitations').update(update).eq('id', id);
     } catch (e, st) {
       throw mapError('SollicitationRepository.updateStatus', e, st);

@@ -1148,7 +1148,9 @@ class _DashboardParticulierPageState
             title: 'Missions',
             subtitle: isAvailable
                 ? 'Vous êtes en ligne : les demandes arrivent ici.'
-                : 'Vous êtes hors ligne : passez en ligne pour recevoir des demandes.',
+                : groups[1].isNotEmpty
+                    ? 'Mission en cours : vous repassez en ligne en la terminant.'
+                    : 'Vous êtes hors ligne : passez en ligne pour recevoir des demandes.',
             bottom: SizedBox(
               width: double.infinity,
               child: SegmentedButton<int>(
@@ -1609,7 +1611,7 @@ class _MissionFiche extends StatelessWidget {
                             item.demande?.libelleFormule,
                             if (quand.isNotEmpty) 'Prévu $quand',
                             if (item.minutesEstimees != null)
-                              '≈ ${duree(item.minutesEstimees!)}',
+                              '≈ ${duree(item.minutesEstimees!)}',
                           ].whereType<String>().join(' · '),
                           style: AppText.caption),
                     ],

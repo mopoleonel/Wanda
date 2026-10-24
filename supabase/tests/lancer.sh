@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Rejoue les migrations 005 → 013 et le scénario des services ménagers sur
+# Rejoue les migrations 005 → 015 et le scénario des services ménagers sur
 # un PostgreSQL 15 jetable (Docker), sans toucher à la base Supabase.
 #   bash supabase/tests/lancer.sh
 # Prérequis : Docker démarré. Le conteneur est supprimé à la fin.

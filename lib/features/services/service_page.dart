@@ -521,6 +521,8 @@ class _ServicePageState extends ConsumerState<ServicePage> {
           isError: false);
       setState(
           () => _ajustements = {..._ajustements}..remove(a.sollicitationId));
+      // Le prix total a changé côté serveur : on relit la fiche.
+      if (accepte) _listenOrders();
     } on AppException catch (e) {
       _showErrorSnackBar(e.message);
     }
@@ -566,7 +568,12 @@ class _ServicePageState extends ConsumerState<ServicePage> {
   Future<void> _reserver(DemandeArgs args) async {
     final envoyee =
         await context.push<bool>(AppRoutes.citoyenDemande, extra: args);
-    if (envoyee == true && mounted) setState(() => _selectedIndex = 1);
+    if (envoyee == true && mounted) {
+      setState(() => _selectedIndex = 1);
+      // Le temps réel n'est pas garanti sur toutes les bases : on recharge
+      // pour que la nouvelle fiche apparaisse tout de suite.
+      _listenOrders();
+    }
   }
 
   /// Demande refusée : mêmes réponses et photos, autre prestataire.
@@ -623,6 +630,7 @@ class _ServicePageState extends ConsumerState<ServicePage> {
   Future<void> _archiveOrder(String id) async {
     try {
       await ref.read(sollicitationRepositoryProvider).archive(id);
+      _listenOrders();
     } on AppException catch (e) {
       _showErrorSnackBar(e.message);
     }
@@ -1121,70 +1129,80 @@ class _ServicePageState extends ConsumerState<ServicePage> {
     return Builder(
       builder: (context) {
         final orders = _orders;
-        final active = orders
-                ?.where((o) => o.statut != 'archive' && o.statut != 'annule')
-                .length ??
-            0;
-        return CustomScrollView(slivers: [
-          SliverToBoxAdapter(
-            child: Letterhead(
-              title: 'Mes demandes',
-              subtitle: orders == null
-                  ? 'Chargement de vos fiches…'
-                  : active > 0
-                      ? '$active demande${active > 1 ? 's' : ''} en cours. Le tampon indique où en est chacune.'
-                      : 'Chaque demande reçoit un numéro de fiche et un tampon de statut.',
-            ),
-          ),
-          if (_ordersError && orders == null)
-            SliverToBoxAdapter(
-                child: ErrorStateView(
-                    message: 'Impossible de charger vos demandes.',
-                    onRetry: _listenOrders))
-          else if (orders == null)
-            const SliverToBoxAdapter(child: LoadingView())
-          else if (orders.isEmpty)
-            SliverToBoxAdapter(
-              child: EmptyStateView(
-                icon: Icons.receipt_long_rounded,
-                title: 'Aucune demande pour le moment',
-                subtitle:
-                    'Réservez un service : votre demande apparaîtra ici avec son numéro.',
-                action: FilledButton(
-                  onPressed: () => setState(() => _selectedIndex = 0),
-                  child: const Text('Réserver un service'),
+        int compte(bool Function(String) f) =>
+            orders?.where((o) => f(o.statut)).length ?? 0;
+        final active =
+            compte((s) => !const ['archive', 'annule', 'termine'].contains(s));
+        final aNoter = compte((s) => s == 'termine');
+        final aussi = aNoter > 0 ? ', $aNoter à noter' : '';
+        return RefreshIndicator(
+          onRefresh: () async => _listenOrders(),
+          child: CustomScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              slivers: [
+                SliverToBoxAdapter(
+                  child: Letterhead(
+                    title: 'Mes demandes',
+                    subtitle: orders == null
+                        ? 'Chargement de vos fiches…'
+                        : active > 0
+                            ? '$active demande${active > 1 ? 's' : ''} en cours$aussi. Le tampon indique où en est chacune.'
+                            : aNoter > 0
+                                ? '$aNoter mission${aNoter > 1 ? 's' : ''} terminée${aNoter > 1 ? 's' : ''} : notez le prestataire pour clore.'
+                                : 'Chaque demande reçoit un numéro de fiche et un tampon de statut.',
+                  ),
                 ),
-              ),
-            )
-          else
-            SliverPadding(
-              padding: const EdgeInsets.fromLTRB(
-                  AppSpace.gutter, AppSpace.xl, AppSpace.gutter, AppSpace.xl),
-              sliver: SliverList.separated(
-                itemCount: orders.length,
-                separatorBuilder: (_, __) =>
-                    const SizedBox(height: AppSpace.md),
-                itemBuilder: (context, i) {
-                  final o = orders[i];
-                  return _OrderFiche(
-                    order: o,
-                    ajustement: _ajustements[o.id],
-                    passages: _passages[o.id],
-                    onRepondre: _repondreAjustement,
-                    onVoirPhoto: _voirPhoto,
-                    onReprendre: () => _reprendre(o),
-                    timerLabel: _getTimerOrEnd(o),
-                    canCancel: _canCancel(o.dateSollicitation),
-                    onCall: () => _call(o.expert?.telephone),
-                    onArchive: () => _archiveOrder(o.id),
-                    onCancelPressed: () => _showCancelAlert(o),
-                    onTimeWarning: () => _showTimeWarning(o.dateSollicitation),
-                    onRate: () => _ratingModal(o),
-                  );
-                },
-              ),
-            ),
-        ]);
+                if (_ordersError && orders == null)
+                  SliverToBoxAdapter(
+                      child: ErrorStateView(
+                          message: 'Impossible de charger vos demandes.',
+                          onRetry: _listenOrders))
+                else if (orders == null)
+                  const SliverToBoxAdapter(child: LoadingView())
+                else if (orders.isEmpty)
+                  SliverToBoxAdapter(
+                    child: EmptyStateView(
+                      icon: Icons.receipt_long_rounded,
+                      title: 'Aucune demande pour le moment',
+                      subtitle:
+                          'Réservez un service : votre demande apparaîtra ici avec son numéro.',
+                      action: FilledButton(
+                        onPressed: () => setState(() => _selectedIndex = 0),
+                        child: const Text('Réserver un service'),
+                      ),
+                    ),
+                  )
+                else
+                  SliverPadding(
+                    padding: const EdgeInsets.fromLTRB(AppSpace.gutter,
+                        AppSpace.xl, AppSpace.gutter, AppSpace.xl),
+                    sliver: SliverList.separated(
+                      itemCount: orders.length,
+                      separatorBuilder: (_, __) =>
+                          const SizedBox(height: AppSpace.md),
+                      itemBuilder: (context, i) {
+                        final o = orders[i];
+                        return _OrderFiche(
+                          order: o,
+                          ajustement: _ajustements[o.id],
+                          passages: _passages[o.id],
+                          onRepondre: _repondreAjustement,
+                          onVoirPhoto: _voirPhoto,
+                          onReprendre: () => _reprendre(o),
+                          timerLabel: _getTimerOrEnd(o),
+                          canCancel: _canCancel(o.dateSollicitation),
+                          onCall: () => _call(o.expert?.telephone),
+                          onArchive: () => _archiveOrder(o.id),
+                          onCancelPressed: () => _showCancelAlert(o),
+                          onTimeWarning: () =>
+                              _showTimeWarning(o.dateSollicitation),
+                          onRate: () => _ratingModal(o),
+                        );
+                      },
+                    ),
+                  ),
+              ]),
+        );
       },
     );
   }
@@ -1317,6 +1335,7 @@ class _ServicePageState extends ConsumerState<ServicePage> {
                 await ref
                     .read(sollicitationRepositoryProvider)
                     .cancel(order.id);
+                _listenOrders();
               } on AppException catch (e) {
                 _showErrorSnackBar(e.message);
               }
@@ -1888,7 +1907,7 @@ class _OrderFiche extends StatelessWidget {
                 onPressed: onCall,
                 icon: const Icon(Icons.call_rounded),
               )
-            else if (isFinal)
+            else if (isFinal && status != 'archive')
               TextButton.icon(
                 onPressed: onArchive,
                 icon: const Icon(Icons.inventory_2_outlined, size: 18),
@@ -1926,27 +1945,26 @@ class _OrderFiche extends StatelessWidget {
           const Divider(),
           Padding(
             padding: const EdgeInsets.all(AppSpace.md),
-            child: Row(children: [
-              Expanded(
-                child: OutlinedButton(
-                  onPressed: canCancel ? onCancelPressed : onTimeWarning,
-                  style: OutlinedButton.styleFrom(
-                    minimumSize: const Size(0, 48),
-                    foregroundColor:
-                        canCancel ? AppColors.danger : AppColors.inkMuted,
-                  ),
-                  child: const Text('Annuler'),
-                ),
-              ),
-              const SizedBox(width: AppSpace.md),
-              Expanded(
-                child: FilledButton(
-                  onPressed: isDone ? onRate : null,
-                  style: FilledButton.styleFrom(minimumSize: const Size(0, 48)),
-                  child: const Text('Noter et clore'),
-                ),
-              ),
-            ]),
+            // Une mission terminée ne s'annule plus : il reste à la noter.
+            child: SizedBox(
+              width: double.infinity,
+              child: isDone
+                  ? FilledButton(
+                      onPressed: onRate,
+                      style: FilledButton.styleFrom(
+                          minimumSize: const Size(0, 48)),
+                      child: const Text('Noter et clore'),
+                    )
+                  : OutlinedButton(
+                      onPressed: canCancel ? onCancelPressed : onTimeWarning,
+                      style: OutlinedButton.styleFrom(
+                        minimumSize: const Size(0, 48),
+                        foregroundColor:
+                            canCancel ? AppColors.danger : AppColors.inkMuted,
+                      ),
+                      child: const Text('Annuler la demande'),
+                    ),
+            ),
           ),
         ],
       ]),

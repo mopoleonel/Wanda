@@ -329,6 +329,8 @@ void main() {
     await _settle(tester);
     expect(h.demandes.reponses, {'aj1': true});
     expect(find.text('AJUSTEMENT'), findsNothing);
+    // Nouveau prix total : la fiche est relue.
+    expect(h.sollicitations.listens, 2);
     await tester.pumpWidget(const SizedBox());
   });
 
@@ -388,7 +390,56 @@ void main() {
 
     expect(find.text('N° 004213'), findsOneWidget);
     expect(find.text('CONFIRMÉ'), findsOneWidget);
+    expect(find.text('Annuler la demande'), findsOneWidget);
     expect(find.textContaining('1 demande en cours'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('Mission terminée : « Noter et clore » sans « Annuler »',
+      (tester) async {
+    tallScreen(tester);
+    await tester.pumpWidget(h.app());
+    await tester.tap(find.text('Mes demandes'));
+    await _settle(tester);
+    h.sollicitations.controller.add([
+      Sollicitation(
+        id: '50930',
+        prestataireId: 'p1',
+        citoyenId: 'c1',
+        nomCitoyen: 'Mbarga',
+        numeroCitoyen: '+237677000000',
+        statut: 'termine',
+        dateSollicitation: DateTime.now(),
+        dateFin: DateTime.now(),
+        expert: const SollicitationExpert(
+            nom: 'Kamga', prenom: 'Paul', services: ['menage']),
+      ),
+    ]);
+    await _settle(tester);
+
+    expect(find.text('TERMINÉ'), findsOneWidget);
+    expect(find.text('Noter et clore'), findsOneWidget);
+    expect(find.text('Annuler la demande'), findsNothing);
+    expect(find.textContaining('1 mission terminée : notez'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('Mes demandes : tirer pour rafraîchir se réabonne',
+      (tester) async {
+    tallScreen(tester);
+    await tester.pumpWidget(h.app());
+    await tester.tap(find.text('Mes demandes'));
+    await _settle(tester);
+    h.sollicitations.controller.add(const []);
+    await _settle(tester);
+
+    tester
+        .state<RefreshIndicatorState>(find.byType(RefreshIndicator))
+        .show();
+    for (var i = 0; i < 3; i++) {
+      await tester.pump(const Duration(seconds: 1));
+    }
+    expect(h.sollicitations.listens, 2);
     await tester.pumpWidget(const SizedBox());
   });
 

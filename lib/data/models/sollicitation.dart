@@ -135,6 +135,15 @@ class Sollicitation {
         motifRefus: map['motif_refus'] as String?,
       );
 
-  static DateTime? _date(Object? v) =>
-      v is String ? DateTime.tryParse(v) : null;
+  /// Les horodatages de `sollicitations` sont des `timestamp` sans fuseau,
+  /// remplis en UTC par le serveur (`now()`) : sans précision, on les lit en
+  /// UTC puis on les affiche à l'heure locale. Une date seule (« 2026-10-25 »)
+  /// reste un jour du calendrier.
+  static DateTime? _date(Object? v) {
+    if (v is! String) return null;
+    final sansFuseau = v.contains('T') &&
+        !v.endsWith('Z') &&
+        !RegExp(r'[+-]\d{2}(:?\d{2})?$').hasMatch(v.substring(v.indexOf('T')));
+    return DateTime.tryParse(sansFuseau ? '${v}Z' : v)?.toLocal();
+  }
 }

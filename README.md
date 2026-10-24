@@ -110,11 +110,16 @@ Dans le Dashboard Supabase > SQL Editor, exécuter dans l'ordre :
     Le script exclut ces deux buckets de toute politique qui ne précise pas
     de bucket, sans rien changer pour les autres (profils, signalements…).
 
+15. `supabase/sql/015_temps_reel_demandes.sql` — active le temps réel sur
+    `sollicitations`, `ajustements` et `passages` : sans lui, une nouvelle
+    demande ou une réponse du prestataire n'apparaît chez le client qu'après
+    avoir tiré l'écran pour rafraîchir.
+
 Les scripts 008 et suivants sont relançables.
 
 ### Tester les migrations sans toucher à la base
 
-`bash supabase/tests/lancer.sh` (Docker démarré) rejoue 005 → 014 sur un
+`bash supabase/tests/lancer.sh` (Docker démarré) rejoue 005 → 015 sur un
 PostgreSQL 15 jetable qui reproduit le schéma Supabase utile
 (`supabase/tests/00_mini_supabase.sql`), vérifie que 008+ se relancent,
 puis joue un scénario complet en tant qu'utilisateurs connectés : fraudes au

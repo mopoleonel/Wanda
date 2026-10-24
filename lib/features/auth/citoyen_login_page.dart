@@ -44,12 +44,18 @@ class _LoginCitoyenPageState extends ConsumerState<LoginCitoyenPage> {
 
   final _formKey = GlobalKey<FormState>();
   bool _submitted = false;
+
+  /// Focus du champ code : `autofocus` ne suffit pas (le champ apparaît
+  /// pendant la transition), on ouvre le clavier explicitement.
+  final _codeFocus = FocusNode();
+
   final phoneController = TextEditingController();
   final codeController = TextEditingController();
 
   @override
   void dispose() {
     _resendTimer?.cancel();
+    _codeFocus.dispose();
     phoneController.dispose();
     codeController.dispose();
     super.dispose();
@@ -84,6 +90,9 @@ class _LoginCitoyenPageState extends ConsumerState<LoginCitoyenPage> {
         _step = _Step.code;
       });
       _startResendCountdown();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _codeFocus.requestFocus();
+      });
       showAppSnackBar(context, "Code envoyé sur WhatsApp au $phone",
           isError: false);
     });
@@ -365,6 +374,7 @@ class _LoginCitoyenPageState extends ConsumerState<LoginCitoyenPage> {
   List<Widget> _codeStep() => [
         TextFormField(
           controller: codeController,
+          focusNode: _codeFocus,
           keyboardType: TextInputType.number,
           textAlign: TextAlign.center,
           maxLength: 6,

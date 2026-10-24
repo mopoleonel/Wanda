@@ -95,6 +95,24 @@ void main() {
       });
       expect(s.expert, isNull);
     });
+
+    test('horodatage serveur sans fuseau lu en UTC, date seule inchangée', () {
+      final s = Sollicitation.fromMap({
+        'id': 44,
+        'prestataire_id': 'p1',
+        'citoyen_id': 'c1',
+        'numero_citoyen': '699111222',
+        'statut': 'en_attente',
+        'date_sollicitation': '2026-10-24T13:56:27.049669',
+        'date_fin': '2026-10-23T17:19:25.906651+00:00',
+        'date_souhaitee': '2026-10-25',
+      });
+      expect(s.dateSollicitation!.toUtc(),
+          DateTime.utc(2026, 10, 24, 13, 56, 27, 49, 669));
+      expect(
+          s.dateFin!.toUtc(), DateTime.utc(2026, 10, 23, 17, 19, 25, 906, 651));
+      expect(s.dateSouhaitee, DateTime(2026, 10, 25));
+    });
   });
 
   group('RatingSummary', () {

@@ -228,10 +228,10 @@ void main() {
     });
 
     test('durées lisibles', () {
-      expect(duree(45), '45 min');
-      expect(duree(60), '1 h');
-      expect(duree(175), '2 h 55');
-      expect(duree(125), '2 h 05');
+      expect(duree(45), '45 min');
+      expect(duree(60), '1 h');
+      expect(duree(175), '2 h 55');
+      expect(duree(125), '2 h 05');
     });
 
     test('détail du prix lisible, pluriels corrects', () {

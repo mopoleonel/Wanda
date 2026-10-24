@@ -176,7 +176,7 @@ class ProfileRepository {
       await _client.from('particuliers').update({
         'essai_utilise': true,
         'type_abonnement': 'ESSAI',
-        'abonnement_expire_at': expiry.toIso8601String(),
+        'abonnement_expire_at': expiry.toUtc().toIso8601String(),
       }).eq('id', id);
     } catch (e, st) {
       throw mapError('ProfileRepository.startFreeTrial', e, st);
