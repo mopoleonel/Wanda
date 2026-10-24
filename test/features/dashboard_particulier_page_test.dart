@@ -63,13 +63,23 @@ class _FakeVerifications extends Fake implements VerificationRepository {
 
 class _FakeSollicitations extends Fake implements SollicitationRepository {
   List<Sollicitation> missions = const [];
+  final statuts = <String, String>{};
   @override
   Future<List<Sollicitation>> fetchForPrestataire(String prestataireId,
           {int page = 0, int pageSize = 30}) async =>
       missions;
+  @override
+  Future<void> updateStatus(String id, String status,
+      {DateTime? dateFin}) async {
+    statuts[id] = status;
+  }
 }
 
-class _FakePrestataires extends Fake implements PrestataireRepository {}
+class _FakePrestataires extends Fake implements PrestataireRepository {
+  @override
+  Future<void> setAvailability(String id, bool value,
+      {double? latitude, double? longitude}) async {}
+}
 
 class _FakeDemandes extends Fake implements DemandeRepository {
   final refus = <String, String?>{};
@@ -350,7 +360,10 @@ void main() {
       _demandes = _FakeDemandes();
       _sollicitations.missions = [enAttente, confirmee];
     });
-    tearDown(() => _sollicitations.missions = const []);
+    tearDown(() {
+      _sollicitations.missions = const [];
+      _sollicitations.statuts.clear();
+    });
 
     Future<void> ouvrirMissions(WidgetTester tester) async {
       tallScreen(tester);
@@ -421,6 +434,40 @@ void main() {
         'produits': 0,
         'motif': 'Deux paniers de plus',
       });
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('Mission acceptée : la carte dit « en mission »',
+        (tester) async {
+      tallScreen(tester);
+      await tester.pumpWidget(_app(_FakeProfiles(_artisan(certifie: true))));
+      await _settle(tester);
+      expect(find.text('EN MISSION'), findsOneWidget);
+      expect(find.text('Passer en ligne'), findsNothing);
+
+      await tester.tap(find.text('Voir la mission'));
+      await _settle(tester);
+      expect(find.text("Terminer l'abonnement"), findsOneWidget);
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('Terminer demande une confirmation', (tester) async {
+      await ouvrirMissions(tester);
+      await tester.tap(find.text('En cours (1)'));
+      await _settle(tester);
+
+      await tester.tap(find.text("Terminer l'abonnement"));
+      await _settle(tester);
+      expect(find.text('Terminer la mission ?'), findsOneWidget);
+      await tester.tap(find.text('Pas encore'));
+      await _settle(tester);
+      expect(_sollicitations.statuts, isEmpty);
+
+      await tester.tap(find.text("Terminer l'abonnement"));
+      await _settle(tester);
+      await tester.tap(find.text("Oui, c'est terminé"));
+      await _settle(tester);
+      expect(_sollicitations.statuts, {'513': 'termine'});
       await tester.pumpWidget(const SizedBox());
     });
   });

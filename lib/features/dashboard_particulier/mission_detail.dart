@@ -18,15 +18,6 @@ import '../../data/models/sollicitation.dart';
 import '../../data/pricing/tarification.dart';
 import '../demande/composants.dart';
 
-/// « mer. 22/10, matin ».
-String quandDemande(Sollicitation s) {
-  const jours = ['lun.', 'mar.', 'mer.', 'jeu.', 'ven.', 'sam.', 'dim.'];
-  final d = s.dateSouhaitee;
-  if (d == null) return '';
-  return '${jours[d.weekday - 1]} ${d.day}/${d.month.toString().padLeft(2, '0')}'
-      '${s.creneau != null ? ', ${s.creneau!.libelle.toLowerCase()}' : ''}';
-}
-
 /// Feuille de détail : tout ce que le prestataire doit voir avant de
 /// répondre. [actions] : boutons propres au statut (accepter / refuser…).
 class DetailMission extends ConsumerWidget {
@@ -64,7 +55,7 @@ class DetailMission extends ConsumerWidget {
                 child: Text(l, style: AppText.body),
               ),
             const Divider(height: AppSpace.xl),
-            _Ligne('Prévu', quandDemande(m)),
+            _Ligne('Prévu', m.quand),
             if (m.minutesEstimees != null)
               _Ligne('Durée estimée', duree(m.minutesEstimees!)),
             if (m.prixTotal != null)

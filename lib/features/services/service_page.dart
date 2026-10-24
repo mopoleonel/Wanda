@@ -570,6 +570,9 @@ class _ServicePageState extends ConsumerState<ServicePage> {
         await context.push<bool>(AppRoutes.citoyenDemande, extra: args);
     if (envoyee == true && mounted) {
       setState(() => _selectedIndex = 1);
+      showAppSnackBar(context,
+          'Demande envoyée : vous êtes prévenu dès que le prestataire répond.',
+          isError: false);
       // Le temps réel n'est pas garanti sur toutes les bases : on recharge
       // pour que la nouvelle fiche apparaisse tout de suite.
       _listenOrders();
@@ -595,14 +598,18 @@ class _ServicePageState extends ConsumerState<ServicePage> {
       if (order.statut == 'accepte') return 'Prestataire confirmé';
       if (order.statut == 'refuse') return 'Prestataire indisponible';
       if (order.statut == 'annule') return 'Demande annulée';
-      if (order.dateSollicitation == null) return 'Envoyée';
-      return 'Envoyée ${sinceLabel(order.dateSollicitation!)}';
+      // La date d'envoi figure déjà en tête de fiche : on dit ce qu'on attend.
+      return 'Attend la réponse du prestataire';
     } catch (e) {
       return "Statut mis à jour";
     }
   }
 
-  bool _canCancel(DateTime? date) {
+  /// Tant que le prestataire n'a pas répondu, le client annule librement.
+  /// Une fois la demande confirmée, il s'est organisé : 2 h de délai.
+  bool _canCancel(Sollicitation o) {
+    if (o.statut == 'en_attente') return true;
+    final date = o.dateSollicitation;
     if (date == null) return false;
     return DateTime.now().difference(date).inMinutes >= 120;
   }
@@ -727,6 +734,7 @@ class _ServicePageState extends ConsumerState<ServicePage> {
         physics: const AlwaysScrollableScrollPhysics(),
         slivers: [
           SliverToBoxAdapter(child: _buildHeader(all.length, isLoading)),
+          SliverToBoxAdapter(child: _buildSuiviEntry()),
           SliverToBoxAdapter(child: _buildServicesEntry()),
           SliverToBoxAdapter(child: _buildReportEntry()),
           SliverToBoxAdapter(child: _buildTradeTabs()),
@@ -937,6 +945,90 @@ class _ServicePageState extends ConsumerState<ServicePage> {
 
   /// Accès direct au signalement d'incident (service public gratuit, à ne
   /// pas confondre avec le ramassage de poubelles à domicile).
+  /// Demande la plus urgente à suivre, en tête de l'accueil : le client voit
+  /// où elle en est sans chercher l'onglet « Mes demandes ».
+  Widget _buildSuiviEntry() {
+    final orders = _orders ?? const <Sollicitation>[];
+    Sollicitation? premier(bool Function(Sollicitation) f) =>
+        orders.where(f).firstOrNull;
+    final aj = premier((o) => _ajustements.containsKey(o.id));
+    final aNoter = premier((o) => o.statut == 'termine');
+    final refusee = premier((o) => o.statut == 'refuse' && o.estDemandeMenage);
+    final confirmee = premier((o) => o.statut == 'accepte');
+    final enAttente = premier((o) => o.statut == 'en_attente');
+    final (Sollicitation? o, String detail, FicheStatus status) = aj != null
+        ? (
+            aj,
+            'Ajustement à valider : +${fcfa(_ajustements[aj.id]!.prixSupp)}',
+            FicheStatus.ajustement
+          )
+        : aNoter != null
+            ? (
+                aNoter,
+                'Terminé : notez le prestataire',
+                FicheStatus.sollicitation('termine')
+              )
+            : refusee != null
+                ? (
+                    refusee,
+                    'Indisponible : choisissez un autre prestataire',
+                    FicheStatus.sollicitation('refuse')
+                  )
+                : confirmee != null
+                    ? (
+                        confirmee,
+                        confirmee.quand.isEmpty
+                            ? 'Prestataire confirmé'
+                            : 'Confirmé pour ${confirmee.quand}',
+                        FicheStatus.sollicitation('accepte')
+                      )
+                    : enAttente != null
+                        ? (
+                            enAttente,
+                            'Attend la réponse du prestataire',
+                            FicheStatus.sollicitation('en_attente')
+                          )
+                        : (null, '', FicheStatus.sollicitation(''));
+    if (o == null) return const SizedBox.shrink();
+    final style = ServiceStyle.of(o.service?.code);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+          AppSpace.gutter, AppSpace.lg, AppSpace.gutter, 0),
+      child: Semantics(
+        button: true,
+        label: 'Suivre ma demande : $detail',
+        child: FicheCard(
+          onTap: () => setState(() => _selectedIndex = 1),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          child: Row(children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: style.tint,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(style.icon, color: style.ink, size: 22),
+            ),
+            const SizedBox(width: AppSpace.md),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('${style.label} · ${ficheNumber(o.id)}',
+                      style: AppText.cardTitle.copyWith(fontSize: 15)),
+                  Text(detail, style: AppText.caption),
+                ],
+              ),
+            ),
+            const SizedBox(width: AppSpace.sm),
+            StatusStamp(status, angle: -3),
+          ]),
+        ),
+      ),
+    );
+  }
+
   Widget _buildReportEntry() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(
@@ -1190,7 +1282,7 @@ class _ServicePageState extends ConsumerState<ServicePage> {
                           onVoirPhoto: _voirPhoto,
                           onReprendre: () => _reprendre(o),
                           timerLabel: _getTimerOrEnd(o),
-                          canCancel: _canCancel(o.dateSollicitation),
+                          canCancel: _canCancel(o),
                           onCall: () => _call(o.expert?.telephone),
                           onArchive: () => _archiveOrder(o.id),
                           onCancelPressed: () => _showCancelAlert(o),
@@ -1209,8 +1301,17 @@ class _ServicePageState extends ConsumerState<ServicePage> {
 
   // ================= DIALOGUES =================
 
+  static const _libellesNote = [
+    'Très décevant',
+    'Décevant',
+    'Correct',
+    'Bien',
+    'Excellent',
+  ];
+
   void _ratingModal(Sollicitation o) {
     int r = 0;
+    var envoi = false;
     final ctrl = TextEditingController();
     final userId = ref.read(authRepositoryProvider).currentUserId;
     showDialog(
@@ -1243,6 +1344,12 @@ class _ServicePageState extends ConsumerState<ServicePage> {
                   ),
                 ),
               ),
+              Center(
+                child: Text(
+                  r == 0 ? 'Touchez une étoile' : _libellesNote[r - 1],
+                  style: AppText.caption,
+                ),
+              ),
               const SizedBox(height: AppSpace.md),
               TextField(
                 controller: ctrl,
@@ -1261,28 +1368,33 @@ class _ServicePageState extends ConsumerState<ServicePage> {
               child: const Text('Plus tard'),
             ),
             FilledButton(
-              onPressed: () async {
-                if (r == 0) {
-                  _showErrorSnackBar('Choisissez une note de 1 à 5 étoiles.');
-                  return;
-                }
-                if (userId == null) return;
-                try {
-                  await ref.read(avisRepositoryProvider).create(
-                        sollicitationId: o.id,
-                        prestataireId: o.prestataireId,
-                        citoyenId: userId,
-                        note: r,
-                        commentaire: ctrl.text,
-                      );
-                  // La note vient de changer : recalcul au prochain affichage.
-                  _ratings.remove(o.prestataireId);
-                  await _archiveOrder(o.id);
-                  if (dialogContext.mounted) Navigator.pop(dialogContext);
-                } on AppException catch (e) {
-                  _showErrorSnackBar(e.message);
-                }
-              },
+              // Actif dès qu'une étoile est choisie ; un seul envoi à la fois.
+              onPressed: r == 0 || envoi || userId == null
+                  ? null
+                  : () async {
+                      setD(() => envoi = true);
+                      try {
+                        await ref.read(avisRepositoryProvider).create(
+                              sollicitationId: o.id,
+                              prestataireId: o.prestataireId,
+                              citoyenId: userId,
+                              note: r,
+                              commentaire: ctrl.text,
+                            );
+                        // La note vient de changer : recalcul au prochain affichage.
+                        _ratings.remove(o.prestataireId);
+                        await _archiveOrder(o.id);
+                        if (dialogContext.mounted) Navigator.pop(dialogContext);
+                        if (mounted) {
+                          showAppSnackBar(context,
+                              'Merci ! Votre avis aide les autres clients.',
+                              isError: false);
+                        }
+                      } on AppException catch (e) {
+                        _showErrorSnackBar(e.message);
+                        if (dialogContext.mounted) setD(() => envoi = false);
+                      }
+                    },
               child: const Text('Valider et clore'),
             ),
           ],
@@ -1336,6 +1448,9 @@ class _ServicePageState extends ConsumerState<ServicePage> {
                     .read(sollicitationRepositoryProvider)
                     .cancel(order.id);
                 _listenOrders();
+                if (mounted) {
+                  showAppSnackBar(context, 'Demande annulée.', isError: false);
+                }
               } on AppException catch (e) {
                 _showErrorSnackBar(e.message);
               }
@@ -2095,12 +2210,7 @@ class _ResumeDemande extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const jours = ['lun.', 'mar.', 'mer.', 'jeu.', 'ven.', 'sam.', 'dim.'];
-    final d = order.dateSouhaitee;
-    final quand = d == null
-        ? null
-        : '${jours[d.weekday - 1]} ${d.day}/${d.month.toString().padLeft(2, '0')}'
-            '${order.creneau != null ? ', ${order.creneau!.libelle.toLowerCase()}' : ''}';
+    final quand = order.quand.isEmpty ? null : order.quand;
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [

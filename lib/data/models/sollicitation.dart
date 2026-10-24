@@ -146,4 +146,13 @@ class Sollicitation {
         !RegExp(r'[+-]\d{2}(:?\d{2})?$').hasMatch(v.substring(v.indexOf('T')));
     return DateTime.tryParse(sansFuseau ? '${v}Z' : v)?.toLocal();
   }
+
+  /// Passage prévu, « mer. 22/10, matin » ; vide sans date souhaitée.
+  String get quand {
+    const jours = ['lun.', 'mar.', 'mer.', 'jeu.', 'ven.', 'sam.', 'dim.'];
+    final d = dateSouhaitee;
+    if (d == null) return '';
+    return '${jours[d.weekday - 1]} ${d.day}/${d.month.toString().padLeft(2, '0')}'
+        '${creneau != null ? ', ${creneau!.libelle.toLowerCase()}' : ''}';
+  }
 }

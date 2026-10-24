@@ -326,8 +326,32 @@ class _DashboardParticulierPageState
     }
   }
 
+  /// Fin de mission : irréversible et déclenche la notation, on confirme.
+  Future<bool> _confirmerFin() async =>
+      await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Terminer la mission ?'),
+          content: const Text(
+              'Vérifiez avec le client que le travail est fini : il sera '
+              'ensuite invité à vous noter.'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Pas encore'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text("Oui, c'est terminé"),
+            ),
+          ],
+        ),
+      ) ??
+      false;
+
   Future<void> _updateMissionStatus(String id, String newStatus,
       {String? phone}) async {
+    if (newStatus == 'termine' && !await _confirmerFin()) return;
     try {
       await ref.read(sollicitationRepositoryProvider).updateStatus(
             id,
@@ -734,6 +758,8 @@ class _DashboardParticulierPageState
               padding: const EdgeInsets.symmetric(horizontal: AppSpace.gutter),
               child: _ShopSign(
                 online: isAvailable,
+                enMission: sollicitations.any((s) => s.statut == 'accepte'),
+                onVoirMission: () => _openMissions(1),
                 subscribed: particulier?.hasValidSubscription ?? false,
                 trialAvailable: !(particulier?.essaiUtilise ?? true),
                 subscriptionLabel: _subscriptionLabel,
@@ -1572,7 +1598,7 @@ class _MissionFiche extends StatelessWidget {
     final client = '${item.prenomCitoyen ?? ''} ${item.nomCitoyen}'.trim();
     final isFinal = status != 'en_attente' && status != 'accepte';
     final menage = item.estDemandeMenage;
-    final quand = quandDemande(item);
+    final quand = item.quand;
     return FicheCard(
       color: isFinal ? AppColors.paper : null,
       padding: EdgeInsets.zero,
@@ -1724,11 +1750,14 @@ class _MissionFiche extends StatelessWidget {
 }
 
 /// L'enseigne de l'artisan, comme la pancarte OUVERT / FERMÉ d'une boutique.
-/// Trois états : en ligne, hors ligne, abonnement requis (verrouillé).
+/// Quatre états : en ligne, hors ligne, en mission (hors ligne le temps
+/// d'une mission acceptée), abonnement requis (verrouillé).
 enum _IdentityState { ok, none, pending, rejected }
 
 class _ShopSign extends StatefulWidget {
   final bool online;
+  final bool enMission;
+  final VoidCallback onVoirMission;
   final bool subscribed;
   final bool trialAvailable;
   final String? subscriptionLabel;
@@ -1739,6 +1768,8 @@ class _ShopSign extends StatefulWidget {
 
   const _ShopSign({
     required this.online,
+    this.enMission = false,
+    required this.onVoirMission,
     required this.subscribed,
     required this.trialAvailable,
     required this.subscriptionLabel,
@@ -1791,6 +1822,7 @@ class _ShopSignState extends State<_ShopSign>
   Widget build(BuildContext context) {
     final locked = !widget.subscribed;
     final online = widget.online && !locked;
+    final enMission = widget.enMission && !online && !locked;
 
     final (bg, fg, soft) = online
         ? (AppColors.letterhead, Colors.white, AppColors.onLetterheadSoft)
@@ -1805,10 +1837,15 @@ class _ShopSignState extends State<_ShopSign>
                 'Vous êtes en ligne',
                 'Les citoyens proches vous voient et peuvent vous solliciter.'
               )
-            : (
-                'Vous êtes hors ligne',
-                'Passez en ligne pour recevoir des demandes près de chez vous.'
-              );
+            : enMission
+                ? (
+                    'Vous êtes en mission',
+                    'Vous repassez en ligne en la terminant.'
+                  )
+                : (
+                    'Vous êtes hors ligne',
+                    'Passez en ligne pour recevoir des demandes près de chez vous.'
+                  );
 
     return AnimatedContainer(
       duration: const Duration(milliseconds: 300),
@@ -1834,8 +1871,11 @@ class _ShopSignState extends State<_ShopSign>
                         ? const FicheStatus('VERROUILLÉ', StampTone.cancelled)
                         : online
                             ? const FicheStatus('EN LIGNE', StampTone.live)
-                            : const FicheStatus(
-                                'HORS LIGNE', StampTone.archived),
+                            : enMission
+                                ? const FicheStatus(
+                                    'EN MISSION', StampTone.progress)
+                                : const FicheStatus(
+                                    'HORS LIGNE', StampTone.archived),
                     angle: -3,
                   ),
                   const SizedBox(height: AppSpace.sm),
@@ -1880,7 +1920,19 @@ class _ShopSignState extends State<_ShopSign>
                 icon: const Icon(Icons.pause_circle_outline_rounded, size: 20),
                 label: const Text('Passer hors ligne'),
               )
-            else
+            else if (enMission) ...[
+              FilledButton.icon(
+                onPressed: widget.onVoirMission,
+                style: FilledButton.styleFrom(
+                    minimumSize: const Size(double.infinity, 52)),
+                icon: const Icon(Icons.assignment_rounded, size: 20),
+                label: const Text('Voir la mission'),
+              ),
+              TextButton(
+                onPressed: widget.onToggle,
+                child: const Text('Recevoir quand même des demandes'),
+              ),
+            ] else
               FilledButton.icon(
                 onPressed: widget.onToggle,
                 style: FilledButton.styleFrom(

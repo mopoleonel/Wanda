@@ -365,6 +365,32 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
+  testWidgets("Accueil : la demande en cours se suit d'un coup d'œil",
+      (tester) async {
+    tallScreen(tester);
+    await tester.pumpWidget(h.app());
+    h.sollicitations.controller.add([
+      Sollicitation.fromMap({
+        'id': 'e0ff8a0e',
+        'prestataire_id': 'p1',
+        'citoyen_id': 'c1',
+        'statut': 'accepte',
+        'service': 'menage',
+        'formule': 'ponctuelle',
+        'date_souhaitee': '2026-10-25',
+        'creneau': 'matin',
+      }),
+    ]);
+    await _settle(tester);
+
+    expect(find.text('Ménage · N° E0FF8A'), findsOneWidget);
+    expect(find.text('Confirmé pour dim. 25/10, matin'), findsOneWidget);
+    await tester.tap(find.text('Confirmé pour dim. 25/10, matin'));
+    await _settle(tester);
+    expect(find.textContaining('1 demande en cours'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+  });
+
   testWidgets('Mes demandes : fiche numérotée et tampon de statut',
       (tester) async {
     tallScreen(tester);
