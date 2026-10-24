@@ -47,6 +47,8 @@ android {
             // (voir README : générer le keystore avec keytool, ne jamais le committer).
             // Sinon, retombe sur la clé debug pour ne pas casser `flutter run --release` en local.
             signingConfig = hasReleaseKeystore ? signingConfigs.release : signingConfigs.debug
+            // Règles R8 propres à l'app (modules ML Kit non embarqués).
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }
 

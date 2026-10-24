@@ -231,7 +231,10 @@ class _ServicePageState extends ConsumerState<ServicePage> {
       (providers) {
         if (!mounted) return;
         setState(() {
-          _allProviders = providers;
+          // Un compte sans service (ancien métier, profil inachevé) n'est
+          // pas réservable : on ne le montre pas comme disponible.
+          _allProviders =
+              providers.where((p) => p.services.isNotEmpty).toList();
           _providersLoaded = true;
           _providersError = false;
         });
@@ -637,11 +640,17 @@ class _ServicePageState extends ConsumerState<ServicePage> {
     };
 
     return Scaffold(
-      body: AnimatedSwitcher(
-        duration: const Duration(milliseconds: 220),
-        switchInCurve: Curves.easeOutCubic,
-        child: KeyedSubtree(key: ValueKey(_selectedIndex), child: body),
-      ),
+      body: () {
+        final contenu = AnimatedSwitcher(
+          duration: const Duration(milliseconds: 220),
+          switchInCurve: Curves.easeOutCubic,
+          child: KeyedSubtree(key: ValueKey(_selectedIndex), child: body),
+        );
+        // La carte s'affiche en plein écran, sous la barre d'état.
+        return _selectedIndex == 0 && _showMap
+            ? contenu
+            : BandeauBarreEtat(child: contenu);
+      }(),
       bottomNavigationBar: DecoratedBox(
         decoration: const BoxDecoration(
           border: Border(top: BorderSide(color: AppColors.rule)),
@@ -746,8 +755,8 @@ class _ServicePageState extends ConsumerState<ServicePage> {
                 Expanded(
                   child: Text(
                     selectedCategory == ServiceStyle.tousCode
-                        ? 'Prestataires disponibles'
-                        : '${ServiceStyle.of(selectedCategory).label} · prestataires disponibles',
+                        ? 'En ligne'
+                        : '${ServiceStyle.of(selectedCategory).label} · en ligne',
                     style: AppText.sectionTitle,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,

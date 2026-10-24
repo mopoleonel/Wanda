@@ -393,36 +393,38 @@ class _DemandePageState extends ConsumerState<DemandePage> {
         if (!didPop) _precedent();
       },
       child: Scaffold(
-        body: ListView(
-          padding: EdgeInsets.zero,
-          children: [
-            Letterhead(
-              showBack: true,
-              onBack: _etape > 1 ? _precedent : null,
-              overline: '${style.label} · étape $_etape sur 4',
-              title: _titres[_etape - 1],
-              bottom: PisteEtapes(libelles: _etapes, etape: _etape),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(
-                  AppSpace.gutter, AppSpace.lg, AppSpace.gutter, AppSpace.xl),
-              child: AnimatedSwitcher(
-                duration: const Duration(milliseconds: 220),
-                switchInCurve: Curves.easeOutCubic,
-                switchOutCurve: const Threshold(1),
-                child: KeyedSubtree(
-                  key: ValueKey(_etape),
-                  child: switch (_etape) {
-                    1 => QuestionsFormule(demande: _demande, onChanged: _maj),
-                    2 => QuestionsService(
-                        demande: _demande, tarifs: _tarifs, onChanged: _maj),
-                    3 => _etapePhotos(),
-                    _ => _etapeRecap(),
-                  },
+        body: BandeauBarreEtat(
+          child: ListView(
+            padding: EdgeInsets.zero,
+            children: [
+              Letterhead(
+                showBack: true,
+                onBack: _etape > 1 ? _precedent : null,
+                overline: '${style.label} · étape $_etape sur 4',
+                title: _titres[_etape - 1],
+                bottom: PisteEtapes(libelles: _etapes, etape: _etape),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(
+                    AppSpace.gutter, AppSpace.lg, AppSpace.gutter, AppSpace.xl),
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 220),
+                  switchInCurve: Curves.easeOutCubic,
+                  switchOutCurve: const Threshold(1),
+                  child: KeyedSubtree(
+                    key: ValueKey(_etape),
+                    child: switch (_etape) {
+                      1 => QuestionsFormule(demande: _demande, onChanged: _maj),
+                      2 => QuestionsService(
+                          demande: _demande, tarifs: _tarifs, onChanged: _maj),
+                      3 => _etapePhotos(),
+                      _ => _etapeRecap(),
+                    },
+                  ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
         bottomNavigationBar: _barre(),
       ),
@@ -628,14 +630,17 @@ class _DemandePageState extends ConsumerState<DemandePage> {
                     const SizedBox(width: AppSpace.sm),
                     // Montant insécable : il rétrécit plutôt que déborder.
                     Flexible(
-                      child: FittedBox(
-                        fit: BoxFit.scaleDown,
+                      child: Align(
                         alignment: Alignment.centerRight,
-                        child: Text(fcfa(prix.prixTotal),
-                            style: AppText.number.copyWith(
-                                fontSize: 24,
-                                fontWeight: FontWeight.w700,
-                                color: AppColors.ink)),
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          alignment: Alignment.centerRight,
+                          child: Text(fcfa(prix.prixTotal),
+                              style: AppText.number.copyWith(
+                                  fontSize: 24,
+                                  fontWeight: FontWeight.w700,
+                                  color: AppColors.ink)),
+                        ),
                       ),
                     ),
                   ],

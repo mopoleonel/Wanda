@@ -11,6 +11,7 @@ import '../../core/router/app_routes.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/bordereau.dart';
 import '../../core/widgets/city_backdrop.dart';
+import '../../data/repositories/auth_repository.dart';
 
 /// Accueil : la ville en duotone vert, « l'œil » qui veille (ondes radar
 /// autour du logo), une fiche d'exemple dont le tampon avance tout seul
@@ -25,6 +26,30 @@ class HomePage extends ConsumerStatefulWidget {
 
 class _HomePageState extends ConsumerState<HomePage>
     with TickerProviderStateMixin {
+  /// Ouvre l'espace choisi. Une session déjà ouverte ne donne accès
+  /// directement qu'à l'espace de SON rôle : un prestataire connecté qui
+  /// touche « Citoyen » passe par la connexion citoyen (et inversement), au
+  /// lieu d'arriver dans un espace qui n'est pas le sien.
+  Future<void> _ouvrirEspace({required bool citoyen}) async {
+    final connexion = citoyen ? AppRoutes.citoyenLogin : AppRoutes.prestaLogin;
+    final auth = ref.read(authRepositoryProvider);
+    final uid = auth.currentUserId;
+    String destination = connexion;
+    if (uid != null) {
+      try {
+        destination = switch (await auth.fetchUserType(uid)) {
+          UserType.citoyen when citoyen => AppRoutes.citoyenServices,
+          UserType.particulier when !citoyen => AppRoutes.dashboardParticulier,
+          UserType.entreprise when !citoyen => AppRoutes.dashboardEntreprise,
+          _ => connexion,
+        };
+      } catch (_) {
+        // Réseau indisponible : la connexion redira ce qu'il faut.
+      }
+    }
+    if (mounted) context.push(destination);
+  }
+
   late final AnimationController _intro = AnimationController(
       vsync: this, duration: const Duration(milliseconds: 1400));
   late final AnimationController _pulse = AnimationController(
@@ -148,12 +173,7 @@ class _HomePageState extends ConsumerState<HomePage>
                               tint: AppColors.greenTint,
                               ink: AppColors.letterheadDeep,
                               primary: true,
-                              onTap: () => context.push(ref
-                                          .read(authRepositoryProvider)
-                                          .currentUserId !=
-                                      null
-                                  ? AppRoutes.citoyenServices
-                                  : AppRoutes.citoyenLogin),
+                              onTap: () => _ouvrirEspace(citoyen: true),
                             ),
                           ),
                           const SizedBox(height: AppSpace.sm),
@@ -166,7 +186,7 @@ class _HomePageState extends ConsumerState<HomePage>
                               icon: Icons.business_center_rounded,
                               tint: AppColors.stampVioletTint,
                               ink: AppColors.stampViolet,
-                              onTap: () => context.push(AppRoutes.prestaLogin),
+                              onTap: () => _ouvrirEspace(citoyen: false),
                             ),
                           ),
                         ],

@@ -748,3 +748,25 @@ class PisteEtapes extends StatelessWidget {
     );
   }
 }
+
+/// Bande verte fixe sous la barre d'état : quand la page défile, le contenu
+/// ne passe pas sous l'heure et les icônes blanches du système.
+class BandeauBarreEtat extends StatelessWidget {
+  final Widget child;
+  const BandeauBarreEtat({super.key, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    final haut = MediaQuery.paddingOf(context).top;
+    return Stack(children: [
+      Positioned.fill(child: child),
+      Positioned(
+        top: 0,
+        left: 0,
+        right: 0,
+        height: haut,
+        child: const ColoredBox(color: AppColors.letterhead),
+      ),
+    ]);
+  }
+}
