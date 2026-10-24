@@ -293,10 +293,11 @@ void main() {
     expect(find.text('Prix fixé par WANDA'), findsOneWidget);
     expect(find.text(_prix(prix)), findsWidgets);
 
-    // Deux prestataires : il faut choisir.
-    await tester.tap(_boutonReserver);
+    // Deux prestataires : le bouton invite à choisir, sans erreur.
+    expect(_boutonReserver, findsNothing);
+    await tester.tap(find.text('Choisir'));
     await _settle(tester);
-    expect(find.text('Choisissez un prestataire.'), findsOneWidget);
+    expect(find.text('Touchez un prestataire dans la liste.'), findsOneWidget);
     expect(h.demandes.creees, isEmpty);
 
     await tester.tap(find.text('Ben Eto'));
@@ -426,6 +427,9 @@ void main() {
             photosEnvoyees: const ['c1/d/1.jpg']));
     expect(find.text('Personne en ligne pour ce service'), findsOneWidget);
     expect(find.text('Actualiser'), findsOneWidget);
+    // Rien à réserver : le bouton le dit, sans message d'erreur.
+    expect(find.text('Indisponible'), findsOneWidget);
+    expect(_boutonReserver, findsNothing);
     await _fin(tester);
   });
 

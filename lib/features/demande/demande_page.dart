@@ -347,10 +347,21 @@ class _DemandePageState extends ConsumerState<DemandePage> {
       [...l]..sort((a, b) => (_distance(a, pos) ?? double.infinity)
           .compareTo(_distance(b, pos) ?? double.infinity));
 
+  /// Titre de la liste des prestataires, pour la faire venir à l'écran.
+  final _cleChoix = GlobalKey();
+
   Future<void> _reserver() async {
     final prestataire = _choisi;
     if (prestataire == null) {
-      showAppSnackBar(context, 'Choisissez un prestataire.');
+      // On amène la liste à l'écran plutôt que d'afficher une erreur.
+      final cible = _cleChoix.currentContext;
+      if (cible != null) {
+        Scrollable.ensureVisible(cible,
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeOutCubic);
+      }
+      showAppSnackBar(context, 'Touchez un prestataire dans la liste.',
+          isError: false);
       return;
     }
     if (_prixServeur == null) {
@@ -450,12 +461,17 @@ class _DemandePageState extends ConsumerState<DemandePage> {
   }
 
   Widget _barre() {
-    final (action, icone) = switch (_etape) {
+    final personneEnLigne =
+        _choisi == null && _prestataires != null && _prestataires!.isEmpty;
+    final (String action, IconData? icone) = switch (_etape) {
       3 when _photos.isEmpty && _chemins.isEmpty => (
           'Prendre une photo',
           Icons.photo_camera_rounded
         ),
       3 when !_verifiee => ('Vérifier les photos', Icons.fact_check_rounded),
+      // Libellés courts : la barre garde la place du prix sur petit écran.
+      4 when personneEnLigne => ('Indisponible', Icons.schedule_rounded),
+      4 when _choisi == null => ('Choisir', Icons.person_search_rounded),
       4 => ('Réserver', Icons.check_rounded),
       _ => ('Continuer', Icons.arrow_forward_rounded),
     };
@@ -467,7 +483,7 @@ class _DemandePageState extends ConsumerState<DemandePage> {
       icone: icone,
       chargement:
           _verification || _reservation || (_etape == 4 && _prixEnCours),
-      onPressed: _suivant,
+      onPressed: _etape == 4 && personneEnLigne ? null : _suivant,
     );
   }
 
@@ -706,8 +722,10 @@ class _DemandePageState extends ConsumerState<DemandePage> {
           selected: {_creneau},
           onSelectionChanged: (s) => setState(() => _creneau = s.first),
         ),
-        const SectionTitle('Votre prestataire',
-            padding: EdgeInsets.only(top: AppSpace.xl, bottom: AppSpace.md)),
+        SectionTitle('Votre prestataire',
+            key: _cleChoix,
+            padding:
+                const EdgeInsets.only(top: AppSpace.xl, bottom: AppSpace.md)),
         _choixPrestataire(),
       ],
     );
