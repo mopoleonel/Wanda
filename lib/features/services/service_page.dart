@@ -202,6 +202,12 @@ class _ServicePageState extends ConsumerState<ServicePage> {
       }
     }
     withDistance.sort((a, b) => a.value.compareTo(b.value));
+    // Sans position connue : les mieux notés d'abord.
+    withoutDistance.sort((a, b) {
+      final ra = _ratingFor(a.id), rb = _ratingFor(b.id);
+      final parNote = rb.average.compareTo(ra.average);
+      return parNote != 0 ? parNote : rb.count.compareTo(ra.count);
+    });
     return [...withDistance.map((e) => e.key), ...withoutDistance];
   }
 
@@ -776,19 +782,10 @@ class _ServicePageState extends ConsumerState<ServicePage> {
     return _buildListView(all, isLoading, hasError);
   }
 
-  /// Experts les mieux notés (au moins un avis), pour la rangée du haut.
-  List<Particulier> _topRated(List<Particulier> all) {
-    final rated = all.where((p) => _ratingFor(p.id).count > 0).toList()
-      ..sort((a, b) {
-        final ra = _ratingFor(a.id), rb = _ratingFor(b.id);
-        final byAvg = rb.average.compareTo(ra.average);
-        return byAvg != 0 ? byAvg : rb.count.compareTo(ra.count);
-      });
-    return rated.take(6).toList();
-  }
-
+  /// Accueil : les prestataires en ligne, tout de suite. Chaque fiche montre
+  /// ses services ; un toucher sur un service ouvre la réservation avec ce
+  /// prestataire déjà choisi.
   Widget _buildListView(List<Particulier> all, bool isLoading, bool hasError) {
-    final topRated = _topRated(all);
     return RefreshIndicator(
       onRefresh: () async {
         _ratings = {};
@@ -800,54 +797,25 @@ class _ServicePageState extends ConsumerState<ServicePage> {
         slivers: [
           SliverToBoxAdapter(child: _buildHeader(all.length, isLoading)),
           SliverToBoxAdapter(child: _buildSuiviEntry()),
-          SliverToBoxAdapter(child: _buildServicesEntry()),
-          SliverToBoxAdapter(child: _buildReportEntry()),
-          SliverToBoxAdapter(child: _buildTradeTabs()),
           if (_locationOff) SliverToBoxAdapter(child: _buildLocationBanner()),
-          if (!isLoading && !hasError && topRated.length >= 2) ...[
-            const SliverToBoxAdapter(child: SectionTitle('Les mieux notés')),
-            SliverToBoxAdapter(
-              child: SizedBox(
-                height: 172,
-                child: ListView.separated(
-                  scrollDirection: Axis.horizontal,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: AppSpace.gutter),
-                  itemCount: topRated.length,
-                  separatorBuilder: (_, __) =>
-                      const SizedBox(width: AppSpace.md),
-                  itemBuilder: (context, i) {
-                    final p = topRated[i];
-                    return _TopRatedFiche(
-                      data: p,
-                      rating: _ratingFor(p.id),
-                      onTap: () => _showDetails(p),
-                    );
-                  },
-                ),
-              ),
-            ),
-          ],
           SliverToBoxAdapter(
             child: Padding(
               padding: const EdgeInsets.fromLTRB(
-                  AppSpace.gutter, AppSpace.xl, AppSpace.gutter, AppSpace.md),
+                  AppSpace.gutter, AppSpace.lg, AppSpace.gutter, 0),
               child: Row(children: [
                 Expanded(
-                  child: Text(
-                    selectedCategory == ServiceStyle.tousCode
-                        ? 'En ligne'
-                        : '${ServiceStyle.of(selectedCategory).label} · en ligne',
-                    style: AppText.sectionTitle,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
+                  child: Text('Prestataires en ligne',
+                      style: AppText.sectionTitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis),
                 ),
                 const SizedBox(width: AppSpace.sm),
                 _viewModeToggle(),
               ]),
             ),
           ),
+          SliverToBoxAdapter(child: _buildTradeTabs()),
+          const SliverToBoxAdapter(child: SizedBox(height: AppSpace.md)),
           if (hasError)
             SliverToBoxAdapter(
               child: ErrorStateView(
@@ -889,11 +857,16 @@ class _ServicePageState extends ConsumerState<ServicePage> {
                     data: p,
                     rating: _ratingFor(p.id),
                     distanceLabel: _formatDistance(p),
+                    serviceEnAvant: selectedCategory,
                     onTap: () => _showDetails(p),
+                    onReserver: (c) =>
+                        _reserver(DemandeArgs(c, prestataire: p)),
                   );
                 },
               ),
             ),
+          SliverToBoxAdapter(child: _buildReportEntry()),
+          const SliverToBoxAdapter(child: SizedBox(height: AppSpace.xl)),
         ],
       ),
     );
@@ -906,7 +879,7 @@ class _ServicePageState extends ConsumerState<ServicePage> {
         : _nomController.text.trim();
     return Letterhead(
       overline: prenom.isNotEmpty ? 'Bonjour, $prenom' : 'Bonjour',
-      title: 'De quoi avez-vous besoin ?',
+      title: 'Qui peut vous aider ?',
       trailing: Semantics(
         button: true,
         label: 'Mon profil',
@@ -932,7 +905,7 @@ class _ServicePageState extends ConsumerState<ServicePage> {
             isLoading
                 ? 'Recherche des prestataires en ligne…'
                 : onlineCount > 0
-                    ? '$onlineCount prestataire${onlineCount > 1 ? 's' : ''} disponible${onlineCount > 1 ? 's' : ''} maintenant'
+                    ? '$onlineCount prestataire${onlineCount > 1 ? 's' : ''} en ligne près de vous'
                     : 'Aucun prestataire en ligne pour le moment',
             style: AppText.label.copyWith(color: AppColors.onLetterheadSoft),
           ),
@@ -973,46 +946,6 @@ class _ServicePageState extends ConsumerState<ServicePage> {
     );
   }
 
-  /// Les 4 services, en grandes tuiles : le geste principal de l'espace.
-  Widget _buildServicesEntry() {
-    final tuiles = [
-      for (final c in CategorieService.values)
-        _ServiceTile(
-          categorie: c,
-          onTap: () => _reserver(DemandeArgs(c)),
-        ),
-    ];
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(
-          AppSpace.gutter, AppSpace.lg, AppSpace.gutter, 0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text('Réserver un service', style: AppText.sectionTitle),
-          const SizedBox(height: 2),
-          Text('Prix fixé par WANDA, affiché avant de réserver.',
-              style: AppText.caption),
-          const SizedBox(height: AppSpace.md),
-          for (var i = 0; i < tuiles.length; i += 2) ...[
-            if (i > 0) const SizedBox(height: AppSpace.sm),
-            IntrinsicHeight(
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Expanded(child: tuiles[i]),
-                  const SizedBox(width: AppSpace.sm),
-                  Expanded(child: tuiles[i + 1]),
-                ],
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  /// Accès direct au signalement d'incident (service public gratuit, à ne
-  /// pas confondre avec le ramassage de poubelles à domicile).
   /// Demande la plus urgente à suivre, en tête de l'accueil : le client voit
   /// où elle en est sans chercher l'onglet « Mes demandes ».
   Widget _buildSuiviEntry() {
@@ -1103,6 +1036,9 @@ class _ServicePageState extends ConsumerState<ServicePage> {
     );
   }
 
+  /// Accès direct au signalement d'incident (service public gratuit, à ne
+  /// pas confondre avec le ramassage de poubelles à domicile). En bas de
+  /// l'accueil : l'écran sert d'abord à trouver un prestataire.
   Widget _buildReportEntry() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(
@@ -1910,131 +1846,154 @@ class _TradeTab extends StatelessWidget {
   }
 }
 
-/// Fiche prestataire dans la liste : photo d'identité, nom, services, note, et la
-/// distance en gros chiffres (l'information qui fait choisir).
+/// Fiche prestataire de l'accueil : qui il est (photo, nom, note, distance)
+/// et ce qu'il propose. Chaque service est un bouton qui ouvre directement la
+/// réservation ; le reste de la fiche ouvre son profil.
 class _ExpertRow extends StatelessWidget {
   final Particulier data;
   final RatingSummary rating;
   final String? distanceLabel;
+  final String serviceEnAvant;
   final VoidCallback onTap;
+  final ValueChanged<CategorieService> onReserver;
 
   const _ExpertRow({
     required this.data,
     required this.rating,
     required this.distanceLabel,
+    required this.serviceEnAvant,
     required this.onTap,
+    required this.onReserver,
   });
 
   @override
   Widget build(BuildContext context) {
     final trade = ServiceStyle.ofServices(data.services);
-    return Semantics(
-      button: true,
-      label: 'Voir la fiche de ${data.prenom} ${data.nom}',
-      child: FicheCard(
-        onTap: onTap,
-        padding: const EdgeInsets.all(AppSpace.md),
-        child: Row(children: [
-          IdPhoto(url: data.photoProUrl, size: 60, tint: trade.tint),
-          const SizedBox(width: AppSpace.md),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(children: [
-                  Flexible(
-                    child: Text(
-                      '${data.prenom} ${data.nom}'.trim(),
-                      style: AppText.cardTitle,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  if (data.identiteVerifiee) ...[
-                    const SizedBox(width: 4),
-                    const VerifiedMark(),
+    final services = [
+      for (final code in data.services)
+        if (CategorieService.fromCode(code) case final c?) c,
+    ];
+    return FicheCard(
+      onTap: onTap,
+      padding: const EdgeInsets.all(AppSpace.md),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Semantics(
+            button: true,
+            label: 'Voir le profil de ${data.prenom} ${data.nom}'.trim(),
+            child: Row(children: [
+              IdPhoto(url: data.photoProUrl, size: 60, tint: trade.tint),
+              const SizedBox(width: AppSpace.md),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(children: [
+                      Flexible(
+                        child: Text(
+                          '${data.prenom} ${data.nom}'.trim(),
+                          style: AppText.cardTitle,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      if (data.identiteVerifiee) ...[
+                        const SizedBox(width: 4),
+                        const VerifiedMark(),
+                      ],
+                    ]),
+                    const SizedBox(height: 4),
+                    RatingInline(rating),
                   ],
-                ]),
-                const SizedBox(height: 6),
-                Wrap(
-                  spacing: AppSpace.sm,
-                  runSpacing: 4,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [ServiceTags(data.services), RatingInline(rating)],
+                ),
+              ),
+              if (distanceLabel != null) ...[
+                const SizedBox(width: AppSpace.sm),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(
+                      distanceLabel!,
+                      style: AppText.number
+                          .copyWith(fontSize: 20, fontWeight: FontWeight.w700),
+                    ),
+                    Text('de vous', style: AppText.caption),
+                  ],
                 ),
               ],
-            ),
+            ]),
           ),
-          const SizedBox(width: AppSpace.sm),
-          if (distanceLabel != null)
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
+          if (services.isNotEmpty) ...[
+            const SizedBox(height: AppSpace.md),
+            Wrap(
+              spacing: AppSpace.sm,
+              runSpacing: AppSpace.sm,
               children: [
-                Text(
-                  distanceLabel!,
-                  style: AppText.number
-                      .copyWith(fontSize: 20, fontWeight: FontWeight.w700),
-                ),
-                Text('de vous', style: AppText.caption),
+                for (final c in services)
+                  _BoutonService(
+                    categorie: c,
+                    enAvant: c.code == serviceEnAvant,
+                    onTap: () => onReserver(c),
+                  ),
               ],
             ),
-          const SizedBox(width: 4),
-          const Icon(Icons.chevron_right_rounded, color: AppColors.inkMuted),
-        ]),
+          ],
+        ],
       ),
     );
   }
 }
 
-class _TopRatedFiche extends StatelessWidget {
-  final Particulier data;
-  final RatingSummary rating;
+/// Service proposé par un prestataire, aux couleurs du service : un toucher
+/// ouvre la réservation.
+class _BoutonService extends StatelessWidget {
+  final CategorieService categorie;
+  final bool enAvant;
   final VoidCallback onTap;
-
-  const _TopRatedFiche(
-      {required this.data, required this.rating, required this.onTap});
+  const _BoutonService(
+      {required this.categorie, required this.enAvant, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
-    final trade = ServiceStyle.ofServices(data.services);
-    return SizedBox(
-      width: 156,
-      child: FicheCard(
-        onTap: onTap,
-        padding: const EdgeInsets.all(AppSpace.md),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            IdPhoto(url: data.photoProUrl, size: 64, tint: trade.tint),
-            const Spacer(),
-            Row(children: [
-              Flexible(
-                child: Text(
-                  '${data.prenom} ${data.nom}'.trim(),
-                  style: AppText.cardTitle.copyWith(fontSize: 15),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              if (data.identiteVerifiee) ...[
+    final style = ServiceStyle.ofCategorie(categorie);
+    return Semantics(
+      button: true,
+      label: 'Réserver : ${categorie.libelle}',
+      excludeSemantics: true,
+      child: Material(
+        color: style.tint,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppRadius.chip),
+          side: BorderSide(
+            color: enAvant ? style.ink : style.ink.withValues(alpha: 0.25),
+            width: enAvant ? 1.5 : 1,
+          ),
+        ),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(AppRadius.chip),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: 44),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                Icon(style.icon, size: 18, color: style.ink),
+                const SizedBox(width: 6),
+                Text(categorie.court,
+                    style: AppText.label.copyWith(
+                        color: style.ink, fontWeight: FontWeight.w700)),
                 const SizedBox(width: 4),
-                const VerifiedMark(),
-              ],
-            ]),
-            const SizedBox(height: 4),
-            Text(trade.label,
-                style: AppText.caption
-                    .copyWith(color: trade.ink, fontWeight: FontWeight.w700)),
-            const SizedBox(height: 4),
-            RatingInline(rating),
-          ],
+                Icon(Icons.arrow_forward_rounded, size: 16, color: style.ink),
+              ]),
+            ),
+          ),
         ),
       ),
     );
   }
 }
 
-/// Fiche de demande : numéro, date, tampon de statut, expert, actions.
 class _OrderFiche extends StatelessWidget {
   final Sollicitation order;
   final Ajustement? ajustement;
@@ -2274,49 +2233,6 @@ class _MapProviderCard extends StatelessWidget {
 }
 
 /// Tuile de réservation d'un service (copie carbone).
-class _ServiceTile extends StatelessWidget {
-  final CategorieService categorie;
-  final VoidCallback onTap;
-  const _ServiceTile({required this.categorie, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    final style = ServiceStyle.ofCategorie(categorie);
-    return Semantics(
-      button: true,
-      label: 'Réserver : ${categorie.libelle}',
-      excludeSemantics: true,
-      child: Material(
-        color: style.tint,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AppRadius.card),
-          side: BorderSide(color: style.ink.withValues(alpha: 0.25)),
-        ),
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(AppRadius.card),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(minHeight: 112),
-            child: Padding(
-              padding: const EdgeInsets.all(AppSpace.md),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Icon(style.icon, color: style.ink, size: 28),
-                  const SizedBox(height: AppSpace.md),
-                  Text(categorie.libelle,
-                      style: AppText.cardTitle.copyWith(color: style.ink)),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 /// Service, formule, date et prix d'une demande ménagère.
 class _ResumeDemande extends StatelessWidget {
   final Sollicitation order;

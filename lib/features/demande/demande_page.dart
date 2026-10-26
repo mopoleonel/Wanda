@@ -463,7 +463,7 @@ class _DemandePageState extends ConsumerState<DemandePage> {
   Widget _barre() {
     final personneEnLigne =
         _choisi == null && _prestataires != null && _prestataires!.isEmpty;
-    final (String action, IconData? icone) = switch (_etape) {
+    final (String action, IconData icone) = switch (_etape) {
       3 when _photos.isEmpty && _chemins.isEmpty => (
           'Prendre une photo',
           Icons.photo_camera_rounded

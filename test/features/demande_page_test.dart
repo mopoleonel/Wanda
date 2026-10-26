@@ -390,7 +390,8 @@ void main() {
     await _fin(tester);
   });
 
-  testWidgets('Reprise : sans le prestataire qui a refusé, même jour et créneau',
+  testWidgets(
+      'Reprise : sans le prestataire qui a refusé, même jour et créneau',
       (tester) async {
     grandEcran(tester);
     h.prestataires.liste = [_awa, _ben];

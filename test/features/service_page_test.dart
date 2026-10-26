@@ -188,7 +188,7 @@ void main() {
     await _settle(tester);
 
     expect(find.text('Bonjour, Lucie'), findsOneWidget);
-    expect(find.text('2 prestataires disponibles maintenant'), findsOneWidget);
+    expect(find.text('2 prestataires en ligne près de vous'), findsOneWidget);
     expect(find.text('Paul Kamga'), findsWidgets);
     expect(find.text('Awa Ngo'), findsWidgets);
     await tester.pumpWidget(const SizedBox());
@@ -243,23 +243,25 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('Les 4 services en tuiles ; une tuile ouvre la réservation',
+  testWidgets(
+      "Accueil : un service sur la fiche ouvre la réservation, d'un toucher",
       (tester) async {
     tallScreen(tester);
     await tester.pumpWidget(h.app());
-    h.prestataires.controller.add([_paul]);
+    h.prestataires.controller.add([_paul, _awa]);
     await _settle(tester);
 
-    expect(find.text('Réserver un service'), findsOneWidget);
-    for (final c in CategorieService.values) {
-      expect(find.bySemanticsLabel('Réserver : ${c.libelle}'), findsOneWidget);
-    }
+    // Plus de tuiles ni de « mieux notés » : les prestataires directement.
+    expect(find.text('Réserver un service'), findsNothing);
+    expect(find.text('Les mieux notés'), findsNothing);
+    // Awa propose Linge et Déchets : un bouton par service, sur sa fiche.
+    expect(find.bySemanticsLabel('Réserver : Linge'), findsOneWidget);
     await tester
-        .tap(find.bySemanticsLabel('Réserver : Lutte contre les nuisibles'));
+        .tap(find.bySemanticsLabel('Réserver : Ramassage des poubelles'));
     await _settle(tester);
     expect(find.text('RÉSERVATION'), findsOneWidget);
-    expect(h.reservation!.service, CategorieService.nuisibles);
-    expect(h.reservation!.prestataire, isNull);
+    expect(h.reservation!.service, CategorieService.dechets);
+    expect(h.reservation!.prestataire!.id, 'p2');
     await tester.pumpWidget(const SizedBox());
   });
 
@@ -520,8 +522,8 @@ void main() {
 
     h.sollicitations.controller.add([fiche('accepte')]);
     await _settle(tester);
-    expect(find.text('Paul a confirmé votre demande N° CAFE01.'),
-        findsOneWidget);
+    expect(
+        find.text('Paul a confirmé votre demande N° CAFE01.'), findsOneWidget);
     await tester.tap(find.text('Voir'));
     await _settle(tester);
     expect(find.textContaining('1 demande en cours'), findsOneWidget);
