@@ -448,7 +448,7 @@ class _DemandePageState extends ConsumerState<DemandePage> {
                           children: [
                             QuestionsFormule(
                                 demande: _demande, onChanged: _maj),
-                            const Divider(height: AppSpace.xl * 2),
+                            const Divider(height: AppSpace.xl),
                             QuestionsService(
                                 demande: _demande,
                                 tarifs: _tarifs,
