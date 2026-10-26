@@ -233,7 +233,7 @@ void main() {
     await _settle(tester);
     await tester.tap(find.text('Mes demandes'));
     await _settle(tester);
-    await tester.tap(find.text('Services'));
+    await tester.tap(find.text('Accueil'));
     await _settle(tester);
 
     expect(h.prestataires.listens, 1);

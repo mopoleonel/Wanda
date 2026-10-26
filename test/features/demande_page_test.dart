@@ -192,13 +192,15 @@ void main() {
     addTearDown(tester.view.reset);
   }
 
-  testWidgets('Étape 1 : formule, puis abonnement hebdomadaire = prix par mois',
+  testWidgets('Étape 1 : formule et questions sur le même écran',
       (tester) async {
     grandEcran(tester);
     await _ouvrir(tester, h, const DemandeArgs(CategorieService.menage));
 
-    expect(find.text('Quelle formule ?'), findsOneWidget);
-    expect(find.text('Ménage · étape 1 sur 4'), findsOneWidget);
+    expect(find.text('Décrivez votre besoin'), findsOneWidget);
+    expect(find.text('Ménage · étape 1 sur 3'), findsOneWidget);
+    expect(find.text('Une fois'), findsOneWidget);
+    expect(find.text('Chambres'), findsOneWidget);
     final unique =
         calculerPrix(DemandeMenage.initiale(CategorieService.menage));
     expect(find.text('≈ ${_prix(unique.prixTotal)}'), findsOneWidget);
@@ -210,13 +212,10 @@ void main() {
     expect(find.text('≈ ${_prix(unique.prixTotal * 4)}'), findsOneWidget);
   });
 
-  testWidgets('Étape 2 : chaque compteur met le prix à jour en direct',
+  testWidgets('Étape 1 : chaque compteur met le prix à jour en direct',
       (tester) async {
     grandEcran(tester);
     await _ouvrir(tester, h, const DemandeArgs(CategorieService.menage));
-    await tester.tap(find.text('Continuer'));
-    await _settle(tester);
-    expect(find.text('Décrivez votre besoin'), findsOneWidget);
 
     final avant = calculerPrix(DemandeMenage.initiale(CategorieService.menage));
     // + 1 chambre : +30 min.
@@ -241,8 +240,6 @@ void main() {
       (tester) async {
     grandEcran(tester);
     await _ouvrir(tester, h, const DemandeArgs(CategorieService.menage));
-    await tester.tap(find.text('Continuer'));
-    await _settle(tester);
     // Les 4 compteurs de pièces à zéro.
     for (var i = 0; i < 4; i++) {
       await tester.tap(find.byTooltip('Moins').at(i));
@@ -255,17 +252,15 @@ void main() {
     expect(find.text('Décrivez votre besoin'), findsOneWidget);
   });
 
-  testWidgets('Étape 3 : photos obligatoires, le retour revient à l\'étape 2',
+  testWidgets("Étape 2 : photos obligatoires, le retour revient à l'étape 1",
       (tester) async {
     grandEcran(tester);
     await _ouvrir(tester, h, const DemandeArgs(CategorieService.dechets));
     await tester.tap(find.text('Continuer'));
     await _settle(tester);
-    await tester.tap(find.text('Continuer'));
-    await _settle(tester);
 
     expect(find.text('Ajoutez des photos'), findsOneWidget);
-    expect(find.text('Prendre une photo'), findsOneWidget);
+    expect(find.text('Photo'), findsOneWidget);
     expect(find.textContaining('Photographiez les sacs'), findsOneWidget);
 
     await tester.tap(find.byTooltip('Retour'));

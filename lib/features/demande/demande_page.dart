@@ -1,8 +1,8 @@
 // demande_page.dart
 // -----------------------------------------------------------------------------
-// Réserver un service ménager, en 4 étapes courtes :
-//   1. formule (une fois / abonnement)   2. détails (questionnaire)
-//   3. photos + vérification IA          4. récapitulatif et réservation
+// Réserver un service ménager, en 3 étapes courtes :
+//   1. besoin : formule (une fois / abonnement) et questionnaire
+//   2. photos + vérification IA          3. récapitulatif et réservation
 // Le prix s'affiche en direct (calcul Dart, miroir du SQL) ; au
 // récapitulatif, c'est le prix calculé par le serveur qui est affiché et
 // enregistré. L'IA ne bloque jamais : sans elle, le prix vient des réponses.
@@ -72,9 +72,10 @@ class DemandePage extends ConsumerStatefulWidget {
 }
 
 class _DemandePageState extends ConsumerState<DemandePage> {
-  static const _etapes = ['Formule', 'Détails', 'Photos', 'Réserver'];
+  // Trois étapes : la formule (une fois / abonnement) se choisit sur le même
+  // écran que les questions du service.
+  static const _etapes = ['Besoin', 'Photos', 'Réserver'];
   static const _titres = [
-    'Quelle formule ?',
     'Décrivez votre besoin',
     'Ajoutez des photos',
     'Vérifiez et réservez',
@@ -85,7 +86,7 @@ class _DemandePageState extends ConsumerState<DemandePage> {
   int _etape = 1;
   Tarifs _tarifs = Tarifs.defaut;
 
-  // Étape 3
+  // Étape 2
   final List<File> _photos = [];
   List<String> _chemins = const [];
   bool _verification = false;
@@ -93,7 +94,7 @@ class _DemandePageState extends ConsumerState<DemandePage> {
   AnalyseIa? _analyse;
   CorrectionIa? _correction;
 
-  // Étape 4
+  // Étape 3
   EstimationPrix? _prixServeur;
   bool _prixEnCours = false;
   String? _erreurPrix;
@@ -131,7 +132,7 @@ class _DemandePageState extends ConsumerState<DemandePage> {
       _chemins = a.photosEnvoyees;
       _verifiee = true;
       _analyse = a.analyseId == null ? null : AnalyseIa(id: a.analyseId);
-      _etape = 4;
+      _etape = 3;
       _preparerRecap();
     }
   }
@@ -157,13 +158,12 @@ class _DemandePageState extends ConsumerState<DemandePage> {
           showAppSnackBar(context, 'Choisissez le rythme de l\'abonnement.');
           return;
         }
-      case 2:
         final manque = manqueQuestionnaire(_demande);
         if (manque != null) {
           showAppSnackBar(context, manque);
           return;
         }
-      case 3:
+      case 2:
         if (_photos.isEmpty && _chemins.isEmpty) {
           _prendrePhoto(ImageSource.camera);
           return;
@@ -172,10 +172,10 @@ class _DemandePageState extends ConsumerState<DemandePage> {
           _verifierPhotos();
           return;
         }
-        setState(() => _etape = 4);
+        setState(() => _etape = 3);
         _preparerRecap();
         return;
-      case 4:
+      case 3:
         _reserver();
         return;
     }
@@ -429,7 +429,7 @@ class _DemandePageState extends ConsumerState<DemandePage> {
               Letterhead(
                 showBack: true,
                 onBack: _etape > 1 ? _precedent : null,
-                overline: '${style.label} · étape $_etape sur 4',
+                overline: '${style.label} · étape $_etape sur 3',
                 title: _titres[_etape - 1],
                 bottom: PisteEtapes(libelles: _etapes, etape: _etape),
               ),
@@ -443,10 +443,19 @@ class _DemandePageState extends ConsumerState<DemandePage> {
                   child: KeyedSubtree(
                     key: ValueKey(_etape),
                     child: switch (_etape) {
-                      1 => QuestionsFormule(demande: _demande, onChanged: _maj),
-                      2 => QuestionsService(
-                          demande: _demande, tarifs: _tarifs, onChanged: _maj),
-                      3 => _etapePhotos(),
+                      1 => Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            QuestionsFormule(
+                                demande: _demande, onChanged: _maj),
+                            const Divider(height: AppSpace.xl * 2),
+                            QuestionsService(
+                                demande: _demande,
+                                tarifs: _tarifs,
+                                onChanged: _maj),
+                          ],
+                        ),
+                      2 => _etapePhotos(),
                       _ => _etapeRecap(),
                     },
                   ),
@@ -464,30 +473,30 @@ class _DemandePageState extends ConsumerState<DemandePage> {
     final personneEnLigne =
         _choisi == null && _prestataires != null && _prestataires!.isEmpty;
     final (String action, IconData icone) = switch (_etape) {
-      3 when _photos.isEmpty && _chemins.isEmpty => (
-          'Prendre une photo',
+      2 when _photos.isEmpty && _chemins.isEmpty => (
+          'Photo',
           Icons.photo_camera_rounded
         ),
-      3 when !_verifiee => ('Vérifier les photos', Icons.fact_check_rounded),
+      2 when !_verifiee => ('Vérifier', Icons.fact_check_rounded),
       // Libellés courts : la barre garde la place du prix sur petit écran.
-      4 when personneEnLigne => ('Indisponible', Icons.schedule_rounded),
-      4 when _choisi == null => ('Choisir', Icons.person_search_rounded),
-      4 => ('Réserver', Icons.check_rounded),
+      3 when personneEnLigne => ('Indisponible', Icons.schedule_rounded),
+      3 when _choisi == null => ('Choisir', Icons.person_search_rounded),
+      3 => ('Réserver', Icons.check_rounded),
       _ => ('Continuer', Icons.arrow_forward_rounded),
     };
-    final serveur = _etape == 4 ? _prixServeur : null;
+    final serveur = _etape == 3 ? _prixServeur : null;
     return BarrePrix(
       estimation: serveur ?? _estimation,
       confirme: serveur != null,
       action: action,
       icone: icone,
       chargement:
-          _verification || _reservation || (_etape == 4 && _prixEnCours),
-      onPressed: _etape == 4 && personneEnLigne ? null : _suivant,
+          _verification || _reservation || (_etape == 3 && _prixEnCours),
+      onPressed: _etape == 3 && personneEnLigne ? null : _suivant,
     );
   }
 
-  // ----------------------------------------------------------- étape 3 : photos
+  // ----------------------------------------------------------- étape 2 : photos
 
   Widget _etapePhotos() {
     final style = ServiceStyle.ofCategorie(_demande.service);
@@ -611,7 +620,7 @@ class _DemandePageState extends ConsumerState<DemandePage> {
     );
   }
 
-  // ----------------------------------------------------- étape 4 : récap
+  // ----------------------------------------------------- étape 3 : récap
 
   Widget _etapeRecap() {
     final prix = _prixServeur;

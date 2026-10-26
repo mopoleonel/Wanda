@@ -746,9 +746,9 @@ class _ServicePageState extends ConsumerState<ServicePage> {
           onDestinationSelected: (i) => setState(() => _selectedIndex = i),
           destinations: const [
             NavigationDestination(
-              icon: Icon(Icons.handyman_outlined),
-              selectedIcon: Icon(Icons.handyman_rounded),
-              label: 'Services',
+              icon: Icon(Icons.home_outlined),
+              selectedIcon: Icon(Icons.home_rounded),
+              label: 'Accueil',
             ),
             NavigationDestination(
               icon: Icon(Icons.receipt_long_outlined),
