@@ -2,4 +2,5 @@
 <resources>
     <!-- Vert « en-tête » Wanda (AppColors.letterhead) -->
     <color name="wanda_letterhead">#0E5A3A</color>
+	<color name="ic_launcher_background">#15533A</color>
 </resources>

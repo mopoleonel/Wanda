@@ -179,6 +179,18 @@ Future<void> _ouvrir(WidgetTester tester, _Harness h, DemandeArgs args) async {
 
 String _prix(int montant) => fcfa(montant);
 
+/// « Continuer » (barre du bas) jusqu'à voir [texte] : garde les réponses
+/// proposées par défaut.
+Future<void> _continuerJusqua(WidgetTester tester, String texte) async {
+  final bouton = find.descendant(
+      of: find.byType(BarrePrix), matching: find.text('Continuer'));
+  for (var i = 0; i < 25 && find.text(texte).evaluate().isEmpty; i++) {
+    await tester.tap(bouton);
+    await _settle(tester);
+  }
+  expect(find.text(texte), findsOneWidget);
+}
+
 final _boutonReserver = find.descendant(
     of: find.byType(BarrePrix), matching: find.text('Réserver'));
 
@@ -192,80 +204,111 @@ void main() {
     addTearDown(tester.view.reset);
   }
 
-  testWidgets('Étape 1 : formule et questions sur le même écran',
+  testWidgets('Parcours : une question à la fois, la réponse fait avancer',
       (tester) async {
     grandEcran(tester);
     await _ouvrir(tester, h, const DemandeArgs(CategorieService.menage));
 
-    expect(find.text('Décrivez votre besoin'), findsOneWidget);
-    expect(find.text('Ménage · étape 1 sur 3'), findsOneWidget);
-    expect(find.text('Une fois'), findsOneWidget);
-    expect(find.text('Chambres'), findsOneWidget);
+    expect(find.text('Une seule fois, ou régulièrement ?'), findsOneWidget);
+    expect(find.textContaining('question 1 sur'), findsOneWidget);
+    expect(find.text('Combien de chambres ?'), findsNothing);
     final unique =
         calculerPrix(DemandeMenage.initiale(CategorieService.menage));
     expect(find.text('≈ ${_prix(unique.prixTotal)}'), findsOneWidget);
 
-    await tester.tap(find.text('Abonnement'));
-    await tester.pump();
-    expect(find.text('Chaque semaine'), findsOneWidget);
+    // Un toucher suffit : la question suivante s'affiche.
+    await tester.tap(find.text('Chaque semaine'));
+    await _settle(tester);
+    expect(find.text('Combien de chambres ?'), findsOneWidget);
     expect(find.text('Estimation par mois'), findsOneWidget);
     expect(find.text('≈ ${_prix(unique.prixTotal * 4)}'), findsOneWidget);
-  });
 
-  testWidgets('Étape 1 : chaque compteur met le prix à jour en direct',
-      (tester) async {
-    grandEcran(tester);
-    await _ouvrir(tester, h, const DemandeArgs(CategorieService.menage));
-
-    final avant = calculerPrix(DemandeMenage.initiale(CategorieService.menage));
-    // + 1 chambre : +30 min.
-    await tester.tap(find.byTooltip('Plus').first);
-    await tester.pump();
-    final apres = calculerPrix(
-        DemandeMenage.initiale(CategorieService.menage).avec(Q.chambres, 2));
-    expect(apres.prixTotal, greaterThan(avant.prixTotal));
-    expect(find.text('≈ ${_prix(apres.prixTotal)}'), findsOneWidget);
-
-    // Logement très sale : +50 % de temps.
-    await tester.ensureVisible(find.text('Très sale'));
-    await tester.tap(find.text('Très sale'));
-    await tester.pump();
-    final sale = calculerPrix(DemandeMenage.initiale(CategorieService.menage)
-        .avec(Q.chambres, 2)
-        .avec(Q.etat, 'tres_sale'));
-    expect(find.text('≈ ${_prix(sale.prixTotal)}'), findsOneWidget);
-  });
-
-  testWidgets('Ménage sans aucune pièce : on ne peut pas continuer',
-      (tester) async {
-    grandEcran(tester);
-    await _ouvrir(tester, h, const DemandeArgs(CategorieService.menage));
-    // Les 4 compteurs de pièces à zéro.
-    for (var i = 0; i < 4; i++) {
-      await tester.tap(find.byTooltip('Moins').at(i));
-      await tester.pump();
-    }
-    await tester.tap(find.text('Continuer'));
+    await tester.tap(find.text('2 chambres'));
     await _settle(tester);
-    expect(
-        find.text('Indiquez au moins une pièce à nettoyer.'), findsOneWidget);
-    expect(find.text('Décrivez votre besoin'), findsOneWidget);
+    expect(find.text('Combien de salons ?'), findsOneWidget);
+    // Les réponses données restent visibles et modifiables.
+    expect(find.text('Chaque semaine'), findsOneWidget);
+    await tester.tap(find.text('2 chambres'));
+    await _settle(tester);
+    expect(find.text('Combien de chambres ?'), findsOneWidget);
   });
 
-  testWidgets("Étape 2 : photos obligatoires, le retour revient à l'étape 1",
+  testWidgets('Chaque réponse met le prix à jour en direct', (tester) async {
+    grandEcran(tester);
+    await _ouvrir(tester, h, const DemandeArgs(CategorieService.menage));
+    await tester.tap(find.text('Une seule fois'));
+    await _settle(tester);
+
+    await tester.tap(find.text('3 chambres'));
+    await _settle(tester);
+    final trois = calculerPrix(
+        DemandeMenage.initiale(CategorieService.menage).avec(Q.chambres, 3));
+    expect(find.text('≈ ${_prix(trois.prixTotal)}'), findsOneWidget);
+
+    // Au-delà des tuiles : « Plus… » ouvre un compteur.
+    await tester.tap(find.text('3 chambres'));
+    await _settle(tester);
+    await tester.tap(find.text('Plus…'));
+    await tester.pump();
+    expect(find.text('Nombre exact'), findsOneWidget);
+    await tester.tap(find.byTooltip('Plus'));
+    await tester.pump();
+    final sept = calculerPrix(
+        DemandeMenage.initiale(CategorieService.menage).avec(Q.chambres, 7));
+    expect(find.text('≈ ${_prix(sept.prixTotal)}'), findsOneWidget);
+  });
+
+  testWidgets('Ménage sans aucune pièce : on revient aux chambres',
+      (tester) async {
+    grandEcran(tester);
+    await _ouvrir(tester, h, const DemandeArgs(CategorieService.menage));
+    for (final reponse in [
+      'Une seule fois',
+      'Aucune',
+      'Aucun',
+      'Aucune',
+      'Aucune'
+    ]) {
+      await tester.tap(find.text(reponse).last);
+      await _settle(tester);
+    }
+    await _continuerJusqua(tester, 'Indiquez au moins une pièce à nettoyer.');
+    expect(find.text('Combien de chambres ?'), findsOneWidget);
+  });
+
+  testWidgets('Une question qui ne concerne pas le client n\'est pas posée',
+      (tester) async {
+    grandEcran(tester);
+    await _ouvrir(tester, h, const DemandeArgs(CategorieService.linge));
+    for (final reponse in ['Une seule fois', '2 paniers', 'Non']) {
+      await tester.tap(find.text(reponse).first);
+      await _settle(tester);
+    }
+    expect(find.text('Faut-il repasser ?'), findsOneWidget);
+    await tester.tap(find.text('Non'));
+    await _settle(tester);
+    expect(find.text('Combien de pièces à repasser ?'), findsNothing);
+    expect(find.text('Qui apporte la lessive ?'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Retour'));
+    await _settle(tester);
+    await tester.tap(find.text('Oui'));
+    await _settle(tester);
+    expect(find.text('Combien de pièces à repasser ?'), findsOneWidget);
+  });
+
+  testWidgets("Étape 2 : photos obligatoires, le retour revient au parcours",
       (tester) async {
     grandEcran(tester);
     await _ouvrir(tester, h, const DemandeArgs(CategorieService.dechets));
-    await tester.tap(find.text('Continuer'));
-    await _settle(tester);
+    await _continuerJusqua(tester, 'Ajoutez des photos');
 
-    expect(find.text('Ajoutez des photos'), findsOneWidget);
     expect(find.text('Photo'), findsOneWidget);
     expect(find.textContaining('Photographiez les sacs'), findsOneWidget);
 
     await tester.tap(find.byTooltip('Retour'));
     await _settle(tester);
-    expect(find.text('Décrivez votre besoin'), findsOneWidget);
+    expect(find.text('À quel moment ?'), findsOneWidget);
   });
 
   testWidgets(
@@ -296,8 +339,17 @@ void main() {
     expect(h.demandes.creees, isEmpty);
 
     await tester.tap(find.text('Ben Eto'));
-    await tester.tap(find.text('Après-midi'));
     await tester.pump();
+    // « Modifier » : retour aux questions du jour et du moment, puis droit
+    // au récapitulatif (photos déjà envoyées).
+    await tester.tap(find.text('Modifier'));
+    await _settle(tester);
+    expect(find.text('Quel jour ?'), findsOneWidget);
+    await tester.tap(find.text('Demain'));
+    await _settle(tester);
+    await tester.tap(find.text("L'après-midi"));
+    await _settle(tester);
+    expect(find.text('Vérifiez et réservez'), findsOneWidget);
     await tester.tap(_boutonReserver);
     await _settle(tester);
 
@@ -446,10 +498,10 @@ void main() {
       for (final c in CategorieService.values) {
         await _ouvrir(tester, h, DemandeArgs(c));
         expect(tester.takeException(), isNull, reason: '${c.code} étape 1');
-        await tester.tap(find.text('Abonnement'));
-        await tester.pump();
-        await tester.tap(find.text('Continuer'));
+        await tester.tap(find.text('Chaque semaine'));
         await _settle(tester);
+        expect(tester.takeException(), isNull, reason: '${c.code} question 2');
+        await _continuerJusqua(tester, 'Ajoutez des photos');
         expect(tester.takeException(), isNull, reason: '${c.code} étape 2');
         await tester.pumpWidget(const SizedBox());
       }

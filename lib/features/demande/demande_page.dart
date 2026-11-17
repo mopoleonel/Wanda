@@ -1,7 +1,8 @@
 // demande_page.dart
 // -----------------------------------------------------------------------------
 // Réserver un service ménager, en 3 étapes courtes :
-//   1. besoin : formule (une fois / abonnement) et questionnaire
+//   1. besoin : parcours guidé, une question à la fois (voir parcours.dart),
+//      jusqu'au jour et au moment du passage
 //   2. photos + vérification IA          3. récapitulatif et réservation
 // Le prix s'affiche en direct (calcul Dart, miroir du SQL) ; au
 // récapitulatif, c'est le prix calculé par le serveur qui est affiché et
@@ -30,7 +31,9 @@ import '../../data/models/demande_menage.dart';
 import '../../data/models/particulier.dart';
 import '../../data/pricing/tarification.dart';
 import 'composants.dart';
+import 'parcours.dart';
 import 'questionnaires.dart';
+import 'vue_question.dart';
 
 /// Ce qu'on passe à l'écran (route `/citoyen/demande`, `extra`).
 class DemandeArgs {
@@ -84,6 +87,9 @@ class _DemandePageState extends ConsumerState<DemandePage> {
 
   late DemandeMenage _demande;
   int _etape = 1;
+
+  /// Question affichée à l'étape 1 (parcours guidé).
+  int _question = 0;
   Tarifs _tarifs = Tarifs.defaut;
 
   // Étape 2
@@ -144,23 +150,65 @@ class _DemandePageState extends ConsumerState<DemandePage> {
 
   EstimationPrix get _estimation => calculerPrix(_demande, _tarifs);
 
-  void _maj(DemandeMenage d) => setState(() {
-        _demande = d;
-        _prixServeur = null;
+  // ---------------------------------------------------------------- navigation
+
+  Saisie get _saisie => Saisie(_demande, _date, _creneau);
+
+  /// Question affichée, bornée (le nombre de questions change avec les
+  /// réponses : repassage, abonnement hebdomadaire…).
+  int get _questionAffichee => _question.clamp(0, _questions.length - 1);
+
+  List<QuestionParcours> get _questions => parcoursPour(_saisie, _tarifs);
+
+  void _appliquer(Saisie s) => setState(() {
+        if (s.demande != _demande) _prixServeur = null;
+        _demande = s.demande;
+        _date = s.date;
+        _creneau = s.creneau;
       });
 
-  // ---------------------------------------------------------------- navigation
+  /// Une réponse au parcours guidé : la question suivante s'affiche après
+  /// un court instant, le temps de voir la tuile choisie.
+  void _repondre(Saisie s, {required bool avancer}) {
+    final question = _question;
+    _appliquer(s);
+    if (!avancer) return;
+    Future.delayed(const Duration(milliseconds: 180), () {
+      if (mounted && _etape == 1 && _question == question) _suivant();
+    });
+  }
+
+  void _allerA(String id) => setState(() {
+        final i = _questions.indexWhere((q) => q.id == id);
+        _etape = 1;
+        _question = i < 0 ? 0 : i;
+      });
 
   void _suivant() {
     switch (_etape) {
       case 1:
+        final questions = _questions;
+        if (_question < questions.length - 1) {
+          setState(() => _question++);
+          return;
+        }
         if (!_demande.formuleComplete) {
-          showAppSnackBar(context, 'Choisissez le rythme de l\'abonnement.');
+          _allerA('rythme');
           return;
         }
         final manque = manqueQuestionnaire(_demande);
         if (manque != null) {
           showAppSnackBar(context, manque);
+          _allerA(_demande.service == CategorieService.menage
+              ? 'chambres'
+              : 'sacs');
+          return;
+        }
+        // Retour depuis le récapitulatif (« Modifier ») : photos déjà
+        // vérifiées, on y revient directement.
+        if (_verifiee && _chemins.isNotEmpty) {
+          setState(() => _etape = 3);
+          _preparerRecap();
           return;
         }
       case 2:
@@ -183,7 +231,10 @@ class _DemandePageState extends ConsumerState<DemandePage> {
   }
 
   void _precedent() {
-    if (_etape > 1 && !_verification && !_reservation) {
+    if (_verification || _reservation) return;
+    if (_etape == 1 && _question > 0) {
+      setState(() => _question--);
+    } else if (_etape > 1) {
       setState(() => _etape--);
     }
   }
@@ -417,7 +468,7 @@ class _DemandePageState extends ConsumerState<DemandePage> {
   Widget build(BuildContext context) {
     final style = ServiceStyle.ofCategorie(_demande.service);
     return PopScope(
-      canPop: _etape == 1 && !_reservation,
+      canPop: _etape == 1 && _question == 0 && !_reservation,
       onPopInvokedWithResult: (didPop, _) {
         if (!didPop) _precedent();
       },
@@ -428,9 +479,14 @@ class _DemandePageState extends ConsumerState<DemandePage> {
             children: [
               Letterhead(
                 showBack: true,
-                onBack: _etape > 1 ? _precedent : null,
-                overline: '${style.label} · étape $_etape sur 3',
-                title: _titres[_etape - 1],
+                onBack: _etape > 1 || _question > 0 ? _precedent : null,
+                // Étape 1 : la question elle-même sert de titre.
+                overline: _etape == 1
+                    ? '${style.label} · question ${_questionAffichee + 1} sur ${_questions.length}'
+                    : '${style.label} · étape $_etape sur 3',
+                title: _etape == 1
+                    ? _questions[_questionAffichee].titre
+                    : _titres[_etape - 1],
                 bottom: PisteEtapes(libelles: _etapes, etape: _etape),
               ),
               Padding(
@@ -441,19 +497,15 @@ class _DemandePageState extends ConsumerState<DemandePage> {
                   switchInCurve: Curves.easeOutCubic,
                   switchOutCurve: const Threshold(1),
                   child: KeyedSubtree(
-                    key: ValueKey(_etape),
+                    key: ValueKey(_etape == 1 ? 'q$_question' : _etape),
                     child: switch (_etape) {
-                      1 => Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            QuestionsFormule(
-                                demande: _demande, onChanged: _maj),
-                            const Divider(height: AppSpace.xl),
-                            QuestionsService(
-                                demande: _demande,
-                                tarifs: _tarifs,
-                                onChanged: _maj),
-                          ],
+                      1 => VueQuestion(
+                          questions: _questions,
+                          index: _questionAffichee,
+                          saisie: _saisie,
+                          encre: style.ink,
+                          onReponse: _repondre,
+                          onRevenir: (i) => setState(() => _question = i),
                         ),
                       2 => _etapePhotos(),
                       _ => _etapeRecap(),
@@ -717,19 +769,23 @@ class _DemandePageState extends ConsumerState<DemandePage> {
           ),
         ],
         const SectionTitle('Quand ?',
-            padding: EdgeInsets.only(top: AppSpace.xl, bottom: AppSpace.md)),
-        _choixDate(),
-        const SizedBox(height: AppSpace.md),
-        SegmentedButton<Creneau>(
-          showSelectedIcon: false,
-          style:
-              SegmentedButton.styleFrom(minimumSize: const Size.fromHeight(48)),
-          segments: [
-            for (final c in Creneau.values)
-              ButtonSegment(value: c, label: Text(c.libelle)),
-          ],
-          selected: {_creneau},
-          onSelectionChanged: (s) => setState(() => _creneau = s.first),
+            padding: EdgeInsets.only(top: AppSpace.xl, bottom: AppSpace.sm)),
+        FicheCard(
+          padding: const EdgeInsets.fromLTRB(AppSpace.lg, 4, 4, 4),
+          child: Row(children: [
+            const Icon(Icons.event_rounded, color: AppColors.inkSoft),
+            const SizedBox(width: AppSpace.md),
+            Expanded(
+              child: Text(
+                  '${libelleJour(_date, DateTime.now())}, '
+                  '${_creneau == Creneau.matin ? 'le matin' : "l'après-midi"}',
+                  style: AppText.bodyStrong),
+            ),
+            TextButton(
+              onPressed: _reservation ? null : () => _allerA('jour'),
+              child: const Text('Modifier'),
+            ),
+          ]),
         ),
         SectionTitle('Votre prestataire',
             key: _cleChoix,
@@ -737,65 +793,6 @@ class _DemandePageState extends ConsumerState<DemandePage> {
                 const EdgeInsets.only(top: AppSpace.xl, bottom: AppSpace.md)),
         _choixPrestataire(),
       ],
-    );
-  }
-
-  Widget _choixDate() {
-    const jours = ['lun.', 'mar.', 'mer.', 'jeu.', 'ven.', 'sam.', 'dim.'];
-    final aujourdhui = DateTime.now();
-    final debut = DateTime(aujourdhui.year, aujourdhui.month, aujourdhui.day);
-    return SizedBox(
-      height: 64,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        itemCount: 14,
-        separatorBuilder: (_, __) => const SizedBox(width: AppSpace.sm),
-        itemBuilder: (context, i) {
-          final d = DateTime(debut.year, debut.month, debut.day + i);
-          final choisi = d == _date;
-          final haut = switch (i) {
-            0 => "Aujourd'hui",
-            1 => 'Demain',
-            _ => jours[d.weekday - 1],
-          };
-          return Semantics(
-            selected: choisi,
-            button: true,
-            child: Material(
-              color: choisi ? AppColors.greenTint : AppColors.surface,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(AppRadius.field),
-                side: BorderSide(
-                    color: choisi ? AppColors.letterhead : AppColors.rule,
-                    width: choisi ? 2 : 1),
-              ),
-              child: InkWell(
-                onTap: () => setState(() => _date = d),
-                borderRadius: BorderRadius.circular(AppRadius.field),
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(minWidth: 64),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(haut, style: AppText.caption),
-                        Text('${d.day}/${d.month.toString().padLeft(2, '0')}',
-                            style: AppText.number.copyWith(
-                                fontSize: 18,
-                                fontWeight: FontWeight.w700,
-                                color: choisi
-                                    ? AppColors.letterheadDeep
-                                    : AppColors.ink)),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          );
-        },
-      ),
     );
   }
 
