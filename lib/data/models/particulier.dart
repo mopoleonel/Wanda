@@ -46,9 +46,11 @@ class Particulier {
         isAvailable: (map['is_available'] as bool?) ?? false,
         latitude: (map['latitude'] as num?)?.toDouble(),
         longitude: (map['longitude'] as num?)?.toDouble(),
-        abonnementExpireAt: map['abonnement_expire_at'] != null
-            ? DateTime.tryParse(map['abonnement_expire_at'] as String)
-            : null,
+        abonnementExpireAt: switch (map['abonnement_expire_at']) {
+          String s => DateTime.tryParse(s),
+          DateTime d => d,
+          _ => null,
+        },
         typeAbonnement: map['type_abonnement'] as String?,
         essaiUtilise: (map['essai_utilise'] as bool?) ?? false,
         identiteVerifiee: (map['identite_verifiee'] as bool?) ?? false,

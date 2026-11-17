@@ -28,8 +28,10 @@ class VerificationIdentite {
         id: map['id'].toString(),
         statut: _statut(map['statut'] as String?),
         motifRejet: map['motif_rejet'] as String?,
-        createdAt: map['created_at'] != null
-            ? DateTime.tryParse(map['created_at'] as String)
-            : null,
+        createdAt: switch (map['created_at']) {
+          String s => DateTime.tryParse(s),
+          DateTime d => d,
+          _ => null,
+        },
       );
 }

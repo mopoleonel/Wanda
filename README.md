@@ -115,6 +115,13 @@ Dans le Dashboard Supabase > SQL Editor, exécuter dans l'ordre :
     demande ou une réponse du prestataire n'apparaît chez le client qu'après
     avoir tiré l'écran pour rafraîchir.
 
+16. `supabase/sql/016_securite_rls_profils_avis_signalements.sql` — **sécurité
+    et isolation des données** : active RLS sur `citoyens` (isolation stricte
+    des données personnelles), `particuliers` et `entreprises` (seul le
+    propriétaire modifie son profil), `avis_prestataires` (seul le client d'une
+    mission terminée note, une seule note par mission, note entre 1 et 5), et
+    `signalements` (seul le citoyen dépose, l'entreprise assignée traite).
+
 Les scripts 008 et suivants sont relançables.
 
 ### Tester les migrations sans toucher à la base

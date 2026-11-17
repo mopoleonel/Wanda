@@ -59,11 +59,16 @@ class SignalementRepository {
     int pageSize = 100,
   }) async {
     try {
-      final inList = types.map((t) => '"${t.replaceAll('"', '')}"').join(',');
+      final validTypes = types.where((t) => t.trim().isNotEmpty).toList();
+      final inList =
+          validTypes.map((t) => '"${t.replaceAll('"', '')}"').join(',');
+      final filter = inList.isEmpty
+          ? 'entreprise_id.eq.$entrepriseId'
+          : 'entreprise_id.eq.$entrepriseId,type_probleme.in.($inList)';
       final rows = await _client
           .from('signalements')
           .select()
-          .or('entreprise_id.eq.$entrepriseId,type_probleme.in.($inList)')
+          .or(filter)
           .order('created_at', ascending: false)
           .limit(pageSize);
       return (rows as List)

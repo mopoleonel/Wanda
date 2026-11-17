@@ -135,5 +135,40 @@ do $$ begin
     raise exception 'ÉCHEC : un tiers lit les photos de demandes'; end if;
   raise notice 'OK un tiers ne lit pas les photos de demandes';
 end $$;
+
+-- ===== Sécurité profils et avis (016) =====
+-- Un tiers ne voit pas le profil citoyen de Lucie
+do $$ begin
+  if exists (select 1 from citoyens where citoyen_id = '22222222-2222-2222-2222-222222222222') then
+    raise exception 'ÉCHEC : un tiers lit le profil citoyen'; end if;
+  raise notice 'OK isolation profil citoyen';
+end $$;
+
+-- Un tiers ne peut pas modifier le prestataire
+update particuliers set is_available = false where id = '11111111-1111-1111-1111-111111111111';
+do $$ begin
+  if (select is_available from particuliers where id = '11111111-1111-1111-1111-111111111111') is not true then
+    raise exception 'ÉCHEC : un tiers a modifié la disponibilité du prestataire'; end if;
+  raise notice 'OK protection profil prestataire contre les tiers';
+end $$;
+
+-- Avis client : uniquement le client sur sa mission terminée
+select set_config('request.jwt.claim.sub', '22222222-2222-2222-2222-222222222222', false);
+insert into avis_prestataires(sollicitation_id, prestataire_id, citoyen_id, note, commentaire)
+  values (:'demande_id', '11111111-1111-1111-1111-111111111111', auth.uid(), 5, 'Super service');
+
+-- Note hors bornes (ex. 6) : refusée
+select pg_temp.attendre_erreur($$insert into avis_prestataires(sollicitation_id, prestataire_id, citoyen_id, note)
+  values (gen_random_uuid(), '11111111-1111-1111-1111-111111111111', auth.uid(), 6)$$, 'avis_note_valide');
+
+-- Doublon d'avis sur la même mission : refusé
+select pg_temp.attendre_erreur(format($$insert into avis_prestataires(sollicitation_id, prestataire_id, citoyen_id, note)
+  values (%L, '11111111-1111-1111-1111-111111111111', auth.uid(), 4)$$, :'demande_id'), 'avis_sollicitation_unique');
+
+-- Tiers ne peut pas noter cette mission
+select set_config('request.jwt.claim.sub', '33333333-3333-3333-3333-333333333333', false);
+select pg_temp.attendre_erreur(format($$insert into avis_prestataires(sollicitation_id, prestataire_id, citoyen_id, note)
+  values (%L, '11111111-1111-1111-1111-111111111111', auth.uid(), 5)$$, :'demande_id'), 'row-level security');
+
 reset role;
 select 'Scénario terminé sans écart' as resultat;

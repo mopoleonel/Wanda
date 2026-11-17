@@ -34,6 +34,19 @@ const _messagesSql = {
   'PASSAGE_IMPOSSIBLE':
       'Le pointage est possible seulement sur un abonnement confirmé.',
   'NON_AUTORISE': 'Action non autorisée.',
+  'IDENTITE_FIGEE':
+      "Vos informations sont figées car votre identité est vérifiée ou en cours d'examen.",
+  'PROFIL_INCOMPLET':
+      'Complétez votre profil (nom, prénom, photo et services) avant de continuer.',
+  'AVIS_DEJA_DONNE': 'Vous avez déjà donné votre avis sur cette mission.',
+  'avis_sollicitation_unique':
+      'Vous avez déjà donné votre avis sur cette mission.',
+  'DOCUMENT_DEJA_UTILISE':
+      "Cette pièce d'identité est déjà associée à un compte WANDA.",
+  'CONSENTEMENT_REQUIS':
+      "Vous devez accepter les conditions de traitement des pièces d'identité.",
+  'CERTIFICATION_EN_COURS':
+      "Une demande de vérification est déjà en cours d'examen.",
 };
 
 AppException mapError(String context, Object error, [StackTrace? stackTrace]) {

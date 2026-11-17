@@ -68,6 +68,28 @@ void main() {
                   const PostgrestException(message: 'PRESTATAIRE_INDISPONIBLE'))
               .message,
           contains("n'est plus disponible"));
+      expect(
+          mapError('t', const PostgrestException(message: 'IDENTITE_FIGEE'))
+              .message,
+          contains('figées'));
+      expect(
+          mapError('t', const PostgrestException(message: 'PROFIL_INCOMPLET'))
+              .message,
+          contains('Complétez votre profil'));
+      expect(
+          mapError('t', const PostgrestException(message: 'AVIS_DEJA_DONNE'))
+              .message,
+          contains('déjà donné votre avis'));
+      expect(
+          mapError('t',
+                  const PostgrestException(message: 'DOCUMENT_DEJA_UTILISE'))
+              .message,
+          contains('déjà associée'));
+      expect(
+          mapError(
+                  't', const PostgrestException(message: 'CONSENTEMENT_REQUIS'))
+              .message,
+          contains('traitement des pièces'));
     });
 
     test('PostgrestException -> message générique base de données', () {
