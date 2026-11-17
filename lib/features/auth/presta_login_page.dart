@@ -165,19 +165,8 @@ class _LoginPrestaPageState extends ConsumerState<LoginPrestaPage> {
       }
       if (type != null) return _enterSpace();
 
-      // Nouveau numéro. S'il figure déjà sur un ancien compte pas encore
-      // rattaché à ce numéro, on n'en crée pas un second : l'équipe WANDA
-      // le rattache (voir supabase/sql/007).
-      final used = await ref
-          .read(profileRepositoryProvider)
-          .isPhoneUsedByOtherPrestataire(phone, userId);
-      if (used) {
-        await auth.signOut();
-        if (mounted) _goTo(_Step.phone);
-        throw const AppException(
-            "Ce numéro est déjà lié à un compte WANDA. Contactez l'équipe "
-            'WANDA pour retrouver l\'accès à votre compte.');
-      }
+      // Nouveau numéro (un numéro = un seul compte, garanti par le
+      // serveur) : choix artisan ou entreprise.
       if (mounted) setState(() => _step = _Step.accountType);
     });
   }
@@ -196,20 +185,16 @@ class _LoginPrestaPageState extends ConsumerState<LoginPrestaPage> {
       await profiles.createProfileEntry(
           userId, isEntreprise ? 'entreprise' : 'particulier');
       if (isEntreprise) {
-        var logoUrl = '';
-        if (entrepriseLogo != null) {
-          logoUrl = await ref.read(storageRepositoryProvider).uploadImage(
-              bucket: 'profils',
-              path: 'profiles/$userId',
-              file: entrepriseLogo!);
-        }
         await profiles.createEntreprise(
           id: userId,
           nomEntreprise: entrepriseController.text.trim(),
           secteurActivite: selectedSector ?? '',
           telephone: phone,
-          logoUrl: logoUrl,
         );
+        // Logo après la fiche : il s'y rattache côté serveur.
+        if (entrepriseLogo != null) {
+          await profiles.envoyerPhotoProfil(entrepriseLogo!);
+        }
       } else {
         await profiles.createParticulier(id: userId, telephone: phone);
       }

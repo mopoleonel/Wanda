@@ -1,79 +1,64 @@
-import 'package:supabase_flutter/supabase_flutter.dart';
+import 'dart:io';
 
+import '../../core/api/api_client.dart';
 import '../../core/error/error_mapper.dart';
+import '../api/adaptateurs.dart';
 import '../models/signalement.dart';
 
-/// Création des signalements citoyens (attribués à l'entreprise du
-/// secteur) et lecture / avancement côté entreprise.
+/// Signalements citoyens (attribués par le serveur à l'entreprise du
+/// secteur) et leur avancement côté entreprise.
 class SignalementRepository {
-  final SupabaseClient _client;
-  SignalementRepository(this._client);
+  final ApiClient _api;
+  SignalementRepository(this._api);
 
-  /// Entreprise qui traite [secteur] (voir `secteurPourType`), s'il y en a
-  /// une : le signalement lui est alors attribué dès l'envoi.
-  Future<String?> findEntrepriseIdForSecteur(String secteur) async {
+  /// Vérification de la photo par l'IA : {valid, detected_type, reason}.
+  /// Sans IA disponible, `valid` est null et le signalement peut partir.
+  Future<Map<String, dynamic>> analyser(String categorie, File image) async {
     try {
-      final data = await _client
-          .from('entreprises')
-          .select('id')
-          .eq('secteur_activite', secteur)
-          .limit(1)
-          .maybeSingle();
-      return data?['id'] as String?;
+      final d = await _api.envoyerFichiers('signalements/analyse',
+          champs: {'categorie': categorie}, fichiers: {'image': image});
+      return (d as Map).cast<String, dynamic>();
     } catch (e, st) {
-      throw mapError('SignalementRepository.findEntrepriseIdForSecteur', e, st);
+      throw mapError('SignalementRepository.analyser', e, st);
     }
   }
 
+  /// Envoie la photo et le signalement ; le serveur choisit l'entreprise du
+  /// secteur.
   Future<void> create({
     required String typeProbleme,
-    required String imageUrl,
+    required File image,
     required double latitude,
     required double longitude,
-    String? entrepriseId,
-    required String citoyenId,
     String? iaValidationDetails,
   }) async {
     try {
-      await _client.from('signalements').insert({
+      await _api.envoyerFichiers('signalements', champs: {
         'type_probleme': typeProbleme,
-        'image_url': imageUrl,
-        'latitude': latitude,
-        'longitude': longitude,
-        'entreprise_id': entrepriseId,
-        'citoyen_id': citoyenId,
-        'statut': 'en_attente',
-        'ia_validation_details': iaValidationDetails,
+        'latitude': latitude.toStringAsFixed(6),
+        'longitude': longitude.toStringAsFixed(6),
+        if (iaValidationDetails != null && iaValidationDetails.isNotEmpty)
+          'ia_validation_details': iaValidationDetails.length > 500
+              ? iaValidationDetails.substring(0, 500)
+              : iaValidationDetails,
+      }, fichiers: {
+        'image': image
       });
     } catch (e, st) {
       throw mapError('SignalementRepository.create', e, st);
     }
   }
 
-  /// Missions d'une entreprise : les signalements qui lui sont attribués,
-  /// plus ceux des [types] de son secteur (anciens signalements enregistrés
-  /// sans entreprise), du plus récent au plus ancien.
+  /// Missions de l'entreprise connectée : attribuées, ou de son secteur sans
+  /// entreprise (le serveur fait le tri).
   Future<List<Signalement>> fetchForEntreprise(
     String entrepriseId,
     List<String> types, {
     int pageSize = 100,
   }) async {
     try {
-      final validTypes = types.where((t) => t.trim().isNotEmpty).toList();
-      final inList =
-          validTypes.map((t) => '"${t.replaceAll('"', '')}"').join(',');
-      final filter = inList.isEmpty
-          ? 'entreprise_id.eq.$entrepriseId'
-          : 'entreprise_id.eq.$entrepriseId,type_probleme.in.($inList)';
-      final rows = await _client
-          .from('signalements')
-          .select()
-          .or(filter)
-          .order('created_at', ascending: false)
-          .limit(pageSize);
-      return (rows as List)
-          .map((r) => Signalement.fromMap(Map<String, dynamic>.from(r)))
-          .toList();
+      final d = await _api.get('signalements');
+      return [for (final s in liste(d)) Signalement.fromMap(versSignalement(s))];
     } catch (e, st) {
       throw mapError('SignalementRepository.fetchForEntreprise', e, st);
     }
@@ -82,9 +67,7 @@ class SignalementRepository {
   /// Avancement d'une mission : en_cours, resolu ou rejete.
   Future<void> updateStatut(String id, String statut) async {
     try {
-      await _client
-          .from('signalements')
-          .update({'statut': statut}).eq('id', id);
+      await _api.post('signalements/$id/statut', {'statut': statut});
     } catch (e, st) {
       throw mapError('SignalementRepository.updateStatut', e, st);
     }

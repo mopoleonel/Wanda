@@ -1,107 +1,66 @@
-import 'package:supabase_flutter/supabase_flutter.dart';
-
+import '../../core/api/api_client.dart';
+import '../../core/api/sondage.dart';
 import '../../core/error/error_mapper.dart';
+import '../api/adaptateurs.dart';
 import '../models/sollicitation.dart';
 
-/// Cycle de vie d'une "sollicitation" (demande de mission d'un citoyen vers
-/// un prestataire) : en_attente -> accepte -> termine / annule -> archive.
+/// Cycle de vie d'une demande : en_attente -> accepte -> termine -> archive,
+/// ou refuse / annule. Chaque transition est vérifiée par le serveur (qui
+/// agit, et à quel moment).
 class SollicitationRepository {
-  final SupabaseClient _client;
-  SollicitationRepository(this._client);
+  final ApiClient _api;
+  SollicitationRepository(this._api);
 
-  Future<void> create({
-    required String prestataireId,
-    required String citoyenId,
-    required String nomCitoyen,
-    required String prenomCitoyen,
-    required String numeroCitoyen,
-  }) async {
-    try {
-      await _client.from('sollicitations').insert({
-        'prestataire_id': prestataireId,
-        'citoyen_id': citoyenId,
-        'nom_citoyen': nomCitoyen,
-        'prenom_citoyen': prenomCitoyen,
-        'numero_citoyen': numeroCitoyen,
-        'date_sollicitation': DateTime.now().toUtc().toIso8601String(),
-        'statut': 'en_attente',
-      }).timeout(const Duration(seconds: 15));
-    } catch (e, st) {
-      throw mapError('SollicitationRepository.create', e, st);
-    }
-  }
+  static const _actions = {
+    'accepte': 'accepter',
+    'refuse': 'refuser',
+    'termine': 'terminer',
+    'annule': 'annuler',
+    'archive': 'classer',
+  };
 
-  /// Suivi temps réel des sollicitations d'un citoyen, avec les infos de
-  /// l'expert associé. Limité aux 50 plus récentes pour éviter de charger un
-  /// historique complet sur un flux réactif.
-  Stream<List<Sollicitation>> streamForCitoyen(String citoyenId) {
-    return _client
-        .from('sollicitations')
-        .stream(primaryKey: ['id'])
-        .eq('citoyen_id', citoyenId)
-        .order('date_sollicitation', ascending: false)
-        .limit(50)
-        .asyncMap((rows) async {
-          final result = <Sollicitation>[];
-          for (final row in rows) {
-            final map = Map<String, dynamic>.from(row);
-            try {
-              final expertData = await _client
-                  .from('particuliers')
-                  .select('nom, prenom, telephone, services, photo_pro_url')
-                  .eq('id', row['prestataire_id'])
-                  .single();
-              map['expert'] = expertData;
-            } catch (_) {
-              map['expert'] = null;
-            }
-            result.add(Sollicitation.fromMap(map));
-          }
-          return result;
-        });
-  }
+  /// Demandes du client connecté (50 plus récentes), suivies en direct.
+  Stream<List<Sollicitation>> streamForCitoyen(String citoyenId) => sonder(
+        () => _api.get('demandes', query: {'role': 'citoyen'}),
+        intervalle: const Duration(seconds: 6),
+      ).map((d) =>
+          [for (final s in liste(d)) Sollicitation.fromMap(versSollicitation(s))]);
 
-  /// Signal temps réel : une mission du prestataire a été créée ou modifiée
-  /// (nouvelle demande, annulation, prix ajusté…). L'écran relit ensuite la
-  /// liste paginée avec [fetchForPrestataire].
-  Stream<void> changementsPrestataire(String prestataireId) => _client
-      .from('sollicitations')
-      .stream(primaryKey: ['id'])
-      .eq('prestataire_id', prestataireId)
-      .map((_) {});
+  /// Signal : une mission du prestataire a été créée ou modifiée (nouvelle
+  /// demande, annulation, ajustement accepté…). L'écran relit alors la
+  /// liste avec [fetchForPrestataire].
+  Stream<void> changementsPrestataire(String prestataireId) => sonder(
+        () => _api.get('demandes', query: {'role': 'prestataire'}),
+        intervalle: const Duration(seconds: 8),
+        // Seules la liste et les dates de modification comptent.
+        empreinte: (d) => [for (final s in liste(d)) [s['id'], s['modifie_le']]],
+      ).map((_) {});
 
-  /// Missions reçues par un prestataire, paginées.
+  /// Missions reçues par le prestataire connecté.
   Future<List<Sollicitation>> fetchForPrestataire(
     String prestataireId, {
     int page = 0,
     int pageSize = 30,
   }) async {
     try {
-      final from = page * pageSize;
-      final to = from + pageSize - 1;
-      final rows = await _client
-          .from('sollicitations')
-          .select('*')
-          .eq('prestataire_id', prestataireId)
-          .order('date_sollicitation', ascending: false)
-          .range(from, to)
-          .timeout(const Duration(seconds: 10));
-      return (rows as List)
-          .map((r) => Sollicitation.fromMap(Map<String, dynamic>.from(r)))
-          .toList();
+      final d = await _api.get('demandes',
+          query: {'role': 'prestataire', 'page': '${page + 1}'});
+      return [for (final s in liste(d)) Sollicitation.fromMap(versSollicitation(s))];
+    } on ApiException catch (e) {
+      // Au-delà de la dernière page : plus rien.
+      if (e.statut == 404) return const [];
+      throw mapError('SollicitationRepository.fetchForPrestataire', e);
     } catch (e, st) {
       throw mapError('SollicitationRepository.fetchForPrestataire', e, st);
     }
   }
 
-  Future<void> updateStatus(String id, String status,
-      {DateTime? dateFin}) async {
+  /// Change le statut. [dateFin] est fixée par le serveur (fin de mission).
+  Future<void> updateStatus(String id, String status, {DateTime? dateFin}) async {
+    final action = _actions[status];
     try {
-      final update = <String, dynamic>{'statut': status};
-      if (dateFin != null) {
-        update['date_fin'] = dateFin.toUtc().toIso8601String();
-      }
-      await _client.from('sollicitations').update(update).eq('id', id);
+      if (action == null) throw ArgumentError.value(status, 'status');
+      await _api.post('demandes/$id/$action');
     } catch (e, st) {
       throw mapError('SollicitationRepository.updateStatus', e, st);
     }

@@ -1,4 +1,6 @@
-from django.db.models import Prefetch
+import uuid
+
+from django.db.models import Avg, Count, Prefetch
 from django.http import Http404
 from django.shortcuts import get_object_or_404
 from django.utils.dateparse import parse_datetime
@@ -183,6 +185,28 @@ class Noter(APIView):
             pk, request.user, s.validated_data["note"], s.validated_data.get("commentaire", "")
         )
         return Response(AvisSerializer(avis).data, status=status.HTTP_201_CREATED)
+
+
+class Notes(APIView):
+    """GET ?ids=a,b : note moyenne et nombre d'avis de plusieurs
+    prestataires en une requête (liste des prestataires)."""
+
+    def get(self, request):
+        ids = []
+        for brut in (request.query_params.get("ids") or "").split(",")[:200]:
+            try:
+                ids.append(uuid.UUID(brut.strip()))
+            except ValueError:
+                continue
+        lignes = (
+            Avis.objects.filter(prestataire_id__in=ids)
+            .values("prestataire_id")
+            .annotate(moyenne=Avg("note"), nombre=Count("id"))
+        )
+        return Response({
+            str(l["prestataire_id"]): {"moyenne": round(float(l["moyenne"]), 2), "nombre": l["nombre"]}
+            for l in lignes
+        })
 
 
 class AvisPrestataire(generics.ListAPIView):

@@ -2,7 +2,7 @@
 const String kDefaultCountryCode = '237';
 
 /// Normalise un numéro saisi par l'utilisateur au format international
-/// E.164 (`+2376XXXXXXXX`) attendu par Supabase Auth / WhatsApp.
+/// E.164 (`+2376XXXXXXXX`) attendu par l'API WANDA / WhatsApp.
 ///
 /// Accepte : `699 00 00 01`, `+237 699000001`, `00237699000001`,
 /// `237699000001`. Retourne `null` si le numéro est manifestement invalide.

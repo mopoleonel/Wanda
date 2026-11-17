@@ -1,49 +1,29 @@
 import 'dart:io';
 
-import 'package:supabase_flutter/supabase_flutter.dart';
-
+import '../../core/api/api_client.dart';
 import '../../core/error/error_mapper.dart';
 import '../../core/identity/cni_parser.dart';
+import '../api/adaptateurs.dart';
 import '../models/verification_identite.dart';
 
-/// Dépôt et suivi de la vérification d'identité d'un artisan.
+/// Dépôt et suivi de la vérification d'identité d'un prestataire.
 ///
-/// Les pièces (recto, verso, selfie) partent dans le bucket PRIVÉ
-/// « identites », dans le dossier de l'artisan, avec des noms horodatés :
-/// aucune URL publique n'est créée et un fichier déposé ne peut pas être
-/// remplacé (voir supabase/sql/005).
+/// Les pièces (recto, verso, selfie) sont envoyées en une seule requête au
+/// serveur, qui les range dans un espace privé : aucune adresse publique, et
+/// une pièce déposée ne peut pas être remplacée.
 class VerificationRepository {
-  static const bucket = 'identites';
-  final SupabaseClient _client;
-  VerificationRepository(this._client);
+  final ApiClient _api;
+  VerificationRepository(this._api);
 
   Future<VerificationIdentite?> latestFor(String userId) async {
     try {
-      final row = await _client
-          .from('prestataire_verifications')
-          .select('id, statut, motif_rejet, created_at')
-          .eq('prestataire_id', userId)
-          .order('created_at', ascending: false)
-          .limit(1)
-          .maybeSingle();
-      return row == null ? null : VerificationIdentite.fromMap(row);
+      final d = await _api.get('moi/certification');
+      return d == null ? null : VerificationIdentite.fromMap(versVerification(d));
     } catch (e, st) {
       throw mapError('VerificationRepository.latestFor', e, st);
     }
   }
 
-  Future<String> _uploadPrivate(String userId, String name, File file) async {
-    final path =
-        '$userId/${DateTime.now().toUtc().millisecondsSinceEpoch}_$name.jpg';
-    await _client.storage.from(bucket).upload(
-          path,
-          file,
-          fileOptions: const FileOptions(contentType: 'image/jpeg'),
-        );
-    return path;
-  }
-
-  /// Envoie les pièces puis enregistre la demande de vérification.
   Future<void> submit({
     required String userId,
     required File recto,
@@ -58,32 +38,32 @@ class VerificationRepository {
     required String consentementVersion,
     required String consentementTexte,
   }) async {
+    String? iso(DateTime? d) => d?.toIso8601String().substring(0, 10);
+    final sexe = (mrz?.sexe.isNotEmpty ?? false) ? mrz!.sexe : front.sexe;
+    final champs = <String, String?>{
+      'nom': nom,
+      'prenoms': prenoms,
+      'numero_document': mrz?.numeroDocument,
+      'date_naissance': iso(mrz?.dateNaissance ?? front.dateNaissance),
+      'lieu_naissance': front.lieuNaissance,
+      'sexe': sexe == 'M' || sexe == 'F' ? sexe : null,
+      'date_expiration': iso(mrz?.dateExpiration),
+      'mrz_presente': '${mrz != null}',
+      'mrz_valide': '${mrz?.isValid ?? false}',
+      'saisie_corrigee': '$saisieCorrigee',
+      'consentement': 'true',
+      'consentement_version': consentementVersion,
+      'consentement_texte': consentementTexte,
+    };
     try {
-      final rectoPath = await _uploadPrivate(userId, 'cni_recto', recto);
-      final versoPath = await _uploadPrivate(userId, 'cni_verso', verso);
-      final selfiePath = await _uploadPrivate(userId, 'selfie', selfie);
-
-      String? iso(DateTime? d) => d?.toIso8601String().substring(0, 10);
-      await _client.from('prestataire_verifications').insert({
-        'prestataire_id': userId,
-        'type_document': 'CNI_CM',
-        'numero_document': mrz?.numeroDocument,
-        'nom': nom,
-        'prenoms': prenoms,
-        'date_naissance': iso(mrz?.dateNaissance ?? front.dateNaissance),
-        'lieu_naissance': front.lieuNaissance,
-        'sexe': (mrz?.sexe.isNotEmpty ?? false) ? mrz!.sexe : front.sexe,
-        'date_expiration': iso(mrz?.dateExpiration),
-        'mrz_presente': mrz != null,
-        'mrz_valide': mrz?.isValid ?? false,
-        'saisie_corrigee': saisieCorrigee,
-        'recto_path': rectoPath,
-        'verso_path': versoPath,
-        'selfie_path': selfiePath,
-        'consentement_at': consentementAt.toUtc().toIso8601String(),
-        'consentement_version': consentementVersion,
-        'consentement_texte': consentementTexte,
-      });
+      await _api.envoyerFichiers(
+        'moi/certification',
+        champs: {
+          for (final e in champs.entries)
+            if (e.value != null && e.value!.isNotEmpty) e.key: e.value!,
+        },
+        fichiers: {'recto': recto, 'verso': verso, 'selfie': selfie},
+      );
     } catch (e, st) {
       throw mapError('VerificationRepository.submit', e, st);
     }

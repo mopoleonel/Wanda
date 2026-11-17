@@ -27,7 +27,9 @@ class _FakeAuth extends Fake implements AuthRepository {
 
   @override
   Future<String> verifyWhatsAppOtp(
-          {required String phone, required String code}) async =>
+          {required String phone,
+          required String code,
+          String? typeCompte}) async =>
       'u1';
 
   @override
@@ -38,16 +40,10 @@ class _FakeAuth extends Fake implements AuthRepository {
 }
 
 class _FakeProfiles extends Fake implements ProfileRepository {
-  _FakeProfiles(this.auth, {this.phoneUsed = false});
+  _FakeProfiles(this.auth);
 
   final _FakeAuth auth;
-  final bool phoneUsed;
   final created = <String, String>{};
-
-  @override
-  Future<bool> isPhoneUsedByOtherPrestataire(
-          String phone, String exceptUserId) async =>
-      phoneUsed;
 
   @override
   Future<void> createProfileEntry(String userId, String userType) async {
@@ -179,24 +175,6 @@ void main() {
     await _typeCode(tester);
     expect(find.text('Créer votre compte'), findsNothing);
     expect(find.text('ESPACE PRESTATAIRE'), findsOneWidget);
-  });
-
-  testWidgets(
-      'Numéro déjà lié à un autre compte : pas de doublon, renvoi vers '
-      'l\'équipe WANDA', (tester) async {
-    final auth = _FakeAuth();
-    final profiles = _FakeProfiles(auth, phoneUsed: true);
-    await tester.pumpWidget(_app(auth: auth, profiles: profiles));
-    await tester.pump(const Duration(seconds: 1));
-
-    await _receiveCode(tester);
-    await _typeCode(tester);
-    expect(auth.signedOut, isTrue);
-    expect(profiles.created, isEmpty);
-    expect(find.textContaining('déjà lié à un compte WANDA'), findsOneWidget);
-    // Retour à la saisie du numéro, sans proposer de mot de passe.
-    expect(find.text('Recevoir le code WhatsApp'), findsOneWidget);
-    expect(find.text('Mot de passe'), findsNothing);
   });
 
   testWidgets('Numéro d\'un compte citoyen refusé', (tester) async {

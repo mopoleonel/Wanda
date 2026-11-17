@@ -1758,16 +1758,15 @@ class _ServicePageState extends ConsumerState<ServicePage> {
     final userId = ref.read(authRepositoryProvider).currentUserId;
     if (userId == null) return;
     try {
-      final img = await ImagePicker()
-          .pickImage(source: ImageSource.gallery, imageQuality: 60);
+      final img = await ImagePicker().pickImage(
+          source: ImageSource.gallery,
+          maxWidth: 1024,
+          maxHeight: 1024,
+          imageQuality: 60);
       if (img == null) return;
-      final url = await ref.read(storageRepositoryProvider).uploadImage(
-            bucket: 'profils',
-            path: 'citoyen_$userId.jpg',
-            file: File(img.path),
-            upsert: true,
-          );
-      await ref.read(profileRepositoryProvider).updateCitoyenPhoto(userId, url);
+      final url = await ref
+          .read(profileRepositoryProvider)
+          .envoyerPhotoProfil(File(img.path));
       if (mounted) setState(() => _photoUrl = url);
     } on AppException catch (e) {
       _showErrorSnackBar(e.message);

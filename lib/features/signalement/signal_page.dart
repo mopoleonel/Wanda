@@ -2,12 +2,10 @@
 // -----------------------------------------------------------------------------
 // Signalement d'incident citoyen : catégorie -> photo -> analyse IA -> envoi.
 //
-// L'analyse IA passe désormais par l'Edge Function Supabase
-// `analyze-signalement` au lieu d'appeler Groq directement depuis le
-// téléphone : la clé Groq ne quitte plus jamais le serveur.
+// L'analyse IA et l'attribution à l'entreprise du secteur se font sur le
+// serveur WANDA : la clé de l'IA ne quitte jamais le serveur.
 // -----------------------------------------------------------------------------
 
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -22,7 +20,6 @@ import '../../core/router/app_routes.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_snackbar.dart';
 import '../../core/widgets/bordereau.dart';
-import '../../data/models/secteur.dart';
 
 /// Catégorie d'incident proposée au citoyen.
 class _Problem {
@@ -62,10 +59,13 @@ class _SignalPageState extends ConsumerState<SignalPage> {
 
   // --- LOGIQUE CAMERA ---
   Future<void> _openCamera() async {
+    // Photo allégée : envoi rapide sur réseau mobile, et sous la limite de
+    // l'analyse IA (4 Mo).
     final XFile? photo = await _picker.pickImage(
         source: ImageSource.camera,
-        imageQuality: 50 // Réduit le poids pour l'IA et Supabase
-        );
+        maxWidth: 1280,
+        maxHeight: 1280,
+        imageQuality: 60);
     if (photo != null) {
       setState(() => _image = File(photo.path));
     }
@@ -80,26 +80,13 @@ class _SignalPageState extends ConsumerState<SignalPage> {
     }
   }
 
-  // --- LOGIQUE IA (Edge Function Supabase -> Groq) ---
-  Future<Map<String, dynamic>> _callAiAnalysis(
-      File imageFile, String category) async {
-    final bytes = await imageFile.readAsBytes();
-    final base64Image = base64Encode(bytes);
+  // --- LOGIQUE IA (serveur WANDA -> Groq) ---
+  /// Vérification de la photo. Sans IA disponible, le serveur répond
+  /// `valid: null` : le signalement part quand même.
+  Future<Map<String, dynamic>> _callAiAnalysis(File imageFile, String category) =>
+      ref.read(signalementRepositoryProvider).analyser(category, imageFile);
 
-    final response = await ref.read(supabaseClientProvider).functions.invoke(
-      'analyze-signalement',
-      body: {'category': category, 'imageBase64': base64Image},
-    );
-
-    final data = response.data;
-    if (data is! Map || data['error'] != null) {
-      throw const AppException(
-          "L'analyse IA a échoué. Réessayez dans un instant.");
-    }
-    return Map<String, dynamic>.from(data);
-  }
-
-  // --- LOGIQUE GLOBALE (IA + GPS + SUPABASE) ---
+  // --- LOGIQUE GLOBALE (IA + GPS + ENVOI) ---
   Future<void> _analyse() async {
     if (analysing) return;
     setState(() {
@@ -149,28 +136,13 @@ class _SignalPageState extends ConsumerState<SignalPage> {
           ? (aiData['detected_type'] as String? ?? "Incident divers")
           : selectedProblem;
 
-      // 3. UPLOAD IMAGE VERS SUPABASE
-      final fileName = 'signal_${DateTime.now().millisecondsSinceEpoch}.jpg';
-      final imageUrl = await ref.read(storageRepositoryProvider).uploadImage(
-            bucket: 'signalements',
-            path: 'uploads/$fileName',
-            file: _image!,
-          );
-
-      // 4. ATTRIBUTION À L'ENTREPRISE DU SECTEUR (types libres de l'IA
-      // compris, classés par mots-clés)
-      final entrepriseId = await ref
-          .read(signalementRepositoryProvider)
-          .findEntrepriseIdForSecteur(secteurPourType(finalType));
-
-      // 5. INSERTION FINALE (AVEC GPS ET IA DETAILS)
+      // 3. ENVOI : photo et signalement ensemble ; le serveur l'attribue à
+      // l'entreprise du secteur (types libres de l'IA compris).
       await ref.read(signalementRepositoryProvider).create(
             typeProbleme: finalType,
-            imageUrl: imageUrl,
+            image: _image!,
             latitude: position.latitude,
             longitude: position.longitude,
-            entrepriseId: entrepriseId,
-            citoyenId: userId,
             iaValidationDetails: aiData['reason'] as String?,
           );
 

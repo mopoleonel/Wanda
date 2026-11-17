@@ -2,100 +2,96 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:http/http.dart' as http;
+import 'package:wanda/core/api/api_client.dart';
 import 'package:wanda/core/error/app_exception.dart';
 import 'package:wanda/core/error/error_mapper.dart';
 
 void main() {
   group('mapError', () {
-    test('traduit "already registered" en message clair', () {
-      final e =
-          mapError('test', const AuthException('User already registered'));
-      expect(e.message, contains('déjà utilisé'));
-    });
-
-    test('traduit "Invalid login credentials"', () {
-      final e =
-          mapError('test', const AuthException('Invalid login credentials'));
-      expect(e.message, contains('incorrect'));
-    });
-
-    test('code OTP expiré ou invalide', () {
-      final e = mapError(
-          'test', const AuthException('Token has expired or is invalid'));
-      expect(e.message, 'Code invalide ou expiré.');
-    });
-
-    test('trop de demandes de code', () {
+    test(
+        "message du serveur affiché tel quel quand l'app n'en a pas de meilleur",
+        () {
       final e = mapError(
           'test',
-          const AuthException(
-              'For security purposes, you can only request this after 42 seconds.'));
-      expect(e.message, contains('Trop de tentatives'));
+          const ApiException('Code incorrect.',
+              code: 'CODE_INVALIDE', statut: 400));
+      expect(e.message, 'Code incorrect.');
+      expect((e as ApiException).code, 'CODE_INVALIDE');
     });
 
-    test('fournisseur WhatsApp non configuré', () {
-      final e =
-          mapError('test', const AuthException('Unsupported phone provider'));
-      expect(e.message, contains('WhatsApp'));
-    });
-
-    test("échec d'envoi du code (Twilio) : pas la faute de l'utilisateur", () {
+    test('trop de demandes de code : message du serveur', () {
       final e = mapError(
           'test',
-          const AuthException(
-              'Error sending confirmation OTP to provider: auth account '
-              'AC00 does not exist',
-              statusCode: '422',
-              code: 'sms_send_failed'));
-      expect(e.message, contains('momentanément indisponible'));
+          const ApiException(
+              'Trop de demandes : réessayez dans quelques minutes.',
+              code: 'TROP_DE_DEMANDES',
+              statut: 429));
+      expect(e.message, contains('Trop de demandes'));
     });
 
-    test('refus métier SQL traduits (prix protégé, ajustement…)', () {
+    test('client HTTP sans réseau -> message réseau', () {
+      final e = mapError('test', http.ClientException('Connection refused'));
+      expect(e.message, contains('connexion internet'));
+    });
+
+    test("refus métier de l'API traduits (prix protégé, ajustement…)", () {
       expect(
-          mapError('t', const PostgrestException(message: 'PRIX_PROTEGE'))
+          mapError(
+                  't',
+                  const ApiException('refus',
+                      code: 'PRIX_PROTEGE', statut: 409))
               .message,
           "Le prix d'une demande ne peut pas être modifié.");
       expect(
           mapError(
                   't',
-                  const PostgrestException(
-                      message: 'AJUSTEMENT_DEJA_EN_ATTENTE'))
+                  const ApiException('refus',
+                      code: 'AJUSTEMENT_DEJA_EN_ATTENTE', statut: 409))
               .message,
           contains('attend déjà'));
       expect(
-          mapError('t',
-                  const PostgrestException(message: 'PRESTATAIRE_INDISPONIBLE'))
+          mapError(
+                  't',
+                  const ApiException('refus',
+                      code: 'PRESTATAIRE_INDISPONIBLE', statut: 409))
               .message,
           contains("n'est plus disponible"));
       expect(
-          mapError('t', const PostgrestException(message: 'IDENTITE_FIGEE'))
+          mapError(
+                  't',
+                  const ApiException('refus',
+                      code: 'IDENTITE_FIGEE', statut: 409))
               .message,
           contains('figées'));
       expect(
-          mapError('t', const PostgrestException(message: 'PROFIL_INCOMPLET'))
+          mapError(
+                  't',
+                  const ApiException('refus',
+                      code: 'PROFIL_INCOMPLET', statut: 409))
               .message,
           contains('Complétez votre profil'));
       expect(
-          mapError('t', const PostgrestException(message: 'AVIS_DEJA_DONNE'))
+          mapError(
+                  't',
+                  const ApiException('refus',
+                      code: 'AVIS_DEJA_DONNE', statut: 409))
               .message,
           contains('déjà donné votre avis'));
       expect(
-          mapError('t',
-                  const PostgrestException(message: 'DOCUMENT_DEJA_UTILISE'))
+          mapError(
+                  't',
+                  const ApiException('refus',
+                      code: 'DOCUMENT_DEJA_UTILISE', statut: 409))
               .message,
           contains('déjà associée'));
       expect(
           mapError(
-                  't', const PostgrestException(message: 'CONSENTEMENT_REQUIS'))
+                  't',
+                  const ApiException('refus',
+                      code: 'CONSENTEMENT_REQUIS', statut: 409))
               .message,
           contains('traitement des pièces'));
-    });
-
-    test('PostgrestException -> message générique base de données', () {
-      final e = mapError(
-          'test', const PostgrestException(message: 'relation does not exist'));
-      expect(e.message, contains('base de données'));
     });
 
     test('SocketException -> message réseau', () {

@@ -169,6 +169,8 @@ class ProfilPrestataire(EssaiAvecFichiers):
         self.assertEqual(r.json()["code"], "FICHIER_INVALIDE")
         # Le lien signé donne le fichier, sans être connecté.
         lien = self.client.get("/api/moi").json()["profil"]["photo_url"]
+        # Photo de profil : même adresse à chaque appel (mise en cache).
+        self.assertEqual(self.client.get("/api/moi").json()["profil"]["photo_url"], lien)
         self.assertEqual(client_de().get(lien).status_code, 200)
         self.assertEqual(client_de().get(lien + "x").status_code, 403)
 
@@ -198,3 +200,25 @@ class Appareils(TestCase):
         self.assertFalse(a.appareils.exists())
         client_de(b).delete("/api/moi/appareils/tok")
         self.assertFalse(b.appareils.exists())
+
+
+class TypeDeCompteApresConnexion(TestCase):
+    def test_choisir_prestataire_puis_type_fige(self):
+        u = Utilisateur.objects.create_user("+237690000055")
+        c = client_de(u)
+        r = c.post("/api/moi/type", {"type_compte": "particulier"}, format="json")
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(r.json()["profil"]["telephone"], "+237690000055")
+        r = c.post("/api/moi/type", {"type_compte": "citoyen"}, format="json")
+        self.assertEqual(r.json()["code"], "TYPE_COMPTE_FIGE")
+
+    def test_entreprise_creee_puis_retiree(self):
+        u = Utilisateur.objects.create_user("+237690000056")
+        c = client_de(u)
+        r = c.put("/api/moi/entreprise", {"nom_entreprise": "Eau Pro",
+                                          "secteur_activite": "Sécurité Publique"}, format="json")
+        self.assertEqual(r.status_code, 201, r.content)
+        self.assertEqual(c.delete("/api/moi/entreprise").status_code, 204)
+        u.refresh_from_db()
+        self.assertEqual(u.type_compte, "")
+        self.assertFalse(hasattr(Utilisateur.objects.get(pk=u.pk), "entreprise"))

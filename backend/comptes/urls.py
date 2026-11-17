@@ -8,6 +8,7 @@ urlpatterns = [
     path("auth/connexion", views.Connexion.as_view(), name="auth-connexion"),
     path("auth/rafraichir", TokenRefreshView.as_view(), name="auth-rafraichir"),
     path("moi", views.Moi.as_view(), name="moi"),
+    path("moi/type", views.ChoisirType.as_view(), name="moi-type"),
     path("moi/citoyen", views.MonProfilCitoyen.as_view(), name="moi-citoyen"),
     path("moi/prestataire", views.MonProfilPrestataire.as_view(), name="moi-prestataire"),
     path("moi/prestataire/en-ligne", views.EnLigne.as_view(), name="moi-en-ligne"),

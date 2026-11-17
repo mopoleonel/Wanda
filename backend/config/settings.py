@@ -166,6 +166,11 @@ if not DEBUG:
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
+    # Redirection HTTPS : a desactiver (DJANGO_SSL_REDIRECT=0) seulement si
+    # le proxy devant Django s'en charge deja.
+    SECURE_SSL_REDIRECT = os.environ.get("DJANGO_SSL_REDIRECT", "1") == "1"
+    # HSTS : une heure par defaut, a augmenter une fois le domaine stable.
+    SECURE_HSTS_SECONDS = int(os.environ.get("DJANGO_HSTS_SECONDS", "3600"))
 
 LOGGING = {
     "version": 1,

@@ -1,16 +1,17 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:http/http.dart' as http;
 
+import '../api/api_client.dart';
 import 'app_exception.dart';
 import 'app_logger.dart';
 
-/// Traduit n'importe quelle erreur (Supabase, réseau, inattendue) en
+/// Traduit n'importe quelle erreur (API, réseau, inattendue) en
 /// [AppException] avec un message français adapté à l'utilisateur final,
 /// tout en loggant systématiquement l'erreur technique d'origine.
-/// Refus métier levés par les fonctions SQL (011 et suivantes) : code de
-/// l'exception → message pour l'utilisateur.
+/// Refus métier de l'API (mêmes codes que les anciennes fonctions SQL) :
+/// code → message pour l'utilisateur.
 const _messagesSql = {
   'PRESTATAIRE_INDISPONIBLE':
       "Ce prestataire n'est plus disponible pour ce service. Choisissez-en un autre.",
@@ -52,101 +53,21 @@ const _messagesSql = {
 AppException mapError(String context, Object error, [StackTrace? stackTrace]) {
   AppLogger.error(context, error, stackTrace);
 
+  // Refus de l'API WANDA : message du serveur, ou celui de l'app pour les
+  // codes qu'elle formule mieux.
+  if (error is ApiException) {
+    final message = _messagesSql[error.code];
+    return message == null
+        ? error
+        : ApiException(message,
+            code: error.code, statut: error.statut, cause: error);
+  }
+
   if (error is AppException) return error;
 
-  if (error is AuthException) {
-    final msg = error.message;
-    if (msg.contains('already registered') ||
-        msg.contains('User already registered')) {
-      return AppException(
-          'Cet email est déjà utilisé. Essayez de vous connecter.',
-          cause: error,
-          stackTrace: stackTrace);
-    }
-    if (msg.contains('Invalid login credentials')) {
-      return AppException('Email ou mot de passe incorrect.',
-          cause: error, stackTrace: stackTrace);
-    }
-    if (msg.toLowerCase().contains('email not confirmed')) {
-      return AppException('Confirmez votre email avant de vous connecter.',
-          cause: error, stackTrace: stackTrace);
-    }
-    final lower = msg.toLowerCase();
-    if (lower.contains('token has expired') ||
-        lower.contains('otp has expired') ||
-        lower.contains('invalid otp')) {
-      return AppException('Code invalide ou expiré.',
-          cause: error, stackTrace: stackTrace);
-    }
-    if (lower.contains('for security purposes') ||
-        lower.contains('rate limit') ||
-        error.statusCode == '429') {
-      return AppException(
-          'Trop de tentatives. Patientez un peu avant de redemander un code.',
-          cause: error,
-          stackTrace: stackTrace);
-    }
-    // Fournisseur d'envoi (Twilio / WhatsApp) absent, mal configuré ou en
-    // panne : ce n'est pas une erreur de l'utilisateur.
-    if (error.code == 'sms_send_failed' ||
-        lower.contains('error sending') ||
-        lower.contains('phone provider') ||
-        lower.contains('phone signups are disabled') ||
-        lower.contains('whatsapp')) {
-      return AppException(
-          "L'envoi du code WhatsApp est momentanément indisponible. Réessayez dans quelques minutes.",
-          cause: error,
-          stackTrace: stackTrace);
-    }
-    if (lower.contains('invalid phone') || lower.contains('phone number')) {
-      return AppException('Numéro de téléphone invalide.',
-          cause: error, stackTrace: stackTrace);
-    }
-    return AppException("Erreur d'authentification. Vérifiez vos informations.",
-        cause: error, stackTrace: stackTrace);
-  }
-
-  if (error is PostgrestException) {
-    for (final entry in _messagesSql.entries) {
-      if (error.message.contains(entry.key)) {
-        return AppException(entry.value, cause: error, stackTrace: stackTrace);
-      }
-    }
-    if (error.message.contains('IDENTITE_NON_VERIFIEE')) {
-      return AppException(
-          'Votre identité doit être validée avant de passer en ligne.',
-          cause: error,
-          stackTrace: stackTrace);
-    }
-    if (error.message.contains('IDENTITE_FIGEE')) {
-      return AppException(
-          "Compte certifié : nom, prénom et numéro ne peuvent plus être modifiés, et vos services ne peuvent plus être retirés. Contactez l'équipe WANDA pour une correction.",
-          cause: error,
-          stackTrace: stackTrace);
-    }
-    if (error.message.contains('PROFIL_INCOMPLET')) {
-      return AppException(
-          'Complétez votre profil (photo, nom, prénom, services) avant de demander la certification.',
-          cause: error,
-          stackTrace: stackTrace);
-    }
-    if (error.code == '23505' &&
-        error.message.contains('prestataire_verifications_numero_unique')) {
-      return AppException(
-          'Cette carte d\'identité est déjà associée à un compte WANDA.',
-          cause: error,
-          stackTrace: stackTrace);
-    }
-    return AppException('Erreur de base de données. Merci de réessayer.',
-        cause: error, stackTrace: stackTrace);
-  }
-
-  if (error is StorageException) {
-    return AppException("Erreur lors de l'envoi du fichier.",
-        cause: error, stackTrace: stackTrace);
-  }
-
-  if (error is SocketException || error is TimeoutException) {
+  if (error is SocketException ||
+      error is TimeoutException ||
+      error is http.ClientException) {
     return AppException(
         'Problème de connexion internet. Vérifiez votre réseau.',
         cause: error,

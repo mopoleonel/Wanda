@@ -118,7 +118,8 @@ void main() {
         identiteVerifiee: false,
       );
       expect(prestaNonCertifie.identiteFigee(), isFalse);
-      expect(prestaNonCertifie.identiteFigee(verificationEnCours: true), isTrue);
+      expect(
+          prestaNonCertifie.identiteFigee(verificationEnCours: true), isTrue);
 
       const prestaCertifie = Particulier(
         id: 'p-1',
@@ -132,8 +133,8 @@ void main() {
 
       // Peut ajouter des services, mais pas en retirer
       expect(
-          prestaCertifie
-              .servicesModifiables(['menage', 'linge'], verificationEnCours: true),
+          prestaCertifie.servicesModifiables(['menage', 'linge'],
+              verificationEnCours: true),
           isTrue);
       expect(
           prestaCertifie

@@ -1,22 +1,29 @@
-import 'package:supabase_flutter/supabase_flutter.dart';
+import 'dart:io';
 
+import '../../core/api/api_client.dart';
 import '../../core/error/error_mapper.dart';
+import '../api/adaptateurs.dart';
 import '../models/citoyen.dart';
 import '../models/entreprise.dart';
 import '../models/particulier.dart';
 
-/// Lecture/écriture des profils métier (citoyens, particuliers, entreprises)
-/// et de la table de référence `profiles`.
+/// Profils du compte connecté (citoyen, prestataire, entreprise).
+///
+/// L'API ne donne accès qu'au profil de l'utilisateur connecté : les
+/// identifiants passés en paramètre ne servent qu'à garder les mêmes appels
+/// dans les écrans.
 class ProfileRepository {
-  final SupabaseClient _client;
-  ProfileRepository(this._client);
+  final ApiClient _api;
+  ProfileRepository(this._api);
 
+  /// Type d'un compte ouvert sans type (premier code dans l'espace
+  /// prestataire) : crée le profil vide correspondant. Une entreprise passe
+  /// par [createEntreprise].
   Future<void> createProfileEntry(String userId, String userType) async {
+    if (userType == 'entreprise') return;
     try {
-      await _client.from('profiles').insert({
-        'id': userId,
-        'user_type': userType,
-      });
+      await _api.post('moi/type', {'type_compte': userType});
+      await _api.session.majType(userType);
     } catch (e, st) {
       throw mapError('ProfileRepository.createProfileEntry', e, st);
     }
@@ -24,36 +31,24 @@ class ProfileRepository {
 
   // --- Citoyen ---
 
-  /// Seul le téléphone (WhatsApp vérifié) est obligatoire à l'inscription :
-  /// nom, prénom et email se complètent ensuite depuis le profil.
+  /// Le profil citoyen est créé avec le compte (code WhatsApp) : il ne
+  /// reste qu'à s'assurer qu'il existe.
   Future<void> createCitoyen({
     required String citoyenId,
     required String telephone,
     String? nom,
     String? prenom,
     String? email,
-  }) async {
-    try {
-      await _client.from('citoyens').insert({
-        'citoyen_id': citoyenId,
-        'telephone': telephone,
-        if (nom != null && nom.isNotEmpty) 'nom': nom,
-        if (prenom != null && prenom.isNotEmpty) 'prenom': prenom,
-        if (email != null && email.isNotEmpty) 'email': email,
-      });
-    } catch (e, st) {
-      throw mapError('ProfileRepository.createCitoyen', e, st);
-    }
-  }
+  }) =>
+      createProfileEntry(citoyenId, 'citoyen');
 
   Future<Citoyen?> fetchCitoyen(String citoyenId) async {
     try {
-      final data = await _client
-          .from('citoyens')
-          .select()
-          .eq('citoyen_id', citoyenId)
-          .maybeSingle();
-      return data == null ? null : Citoyen.fromMap(data);
+      final d = await _api.get('moi/citoyen');
+      return Citoyen.fromMap((d as Map).cast<String, dynamic>());
+    } on ApiException catch (e) {
+      if (e.statut == 403 || e.statut == 404) return null;
+      throw mapError('ProfileRepository.fetchCitoyen', e);
     } catch (e, st) {
       throw mapError('ProfileRepository.fetchCitoyen', e, st);
     }
@@ -61,30 +56,32 @@ class ProfileRepository {
 
   Future<void> updateCitoyen(Citoyen citoyen) async {
     try {
-      await _client
-          .from('citoyens')
-          .update(citoyen.toUpdateMap())
-          .eq('citoyen_id', citoyen.citoyenId);
+      final m = citoyen.toUpdateMap();
+      await _api.patch('moi/citoyen', {
+        'nom': m['nom'] ?? '',
+        'prenom': m['prenom'] ?? '',
+        // Le serveur attend une chaîne, vide si aucun email.
+        'email': m['email'] ?? '',
+      });
     } catch (e, st) {
       throw mapError('ProfileRepository.updateCitoyen', e, st);
     }
   }
 
-  Future<void> updateCitoyenPhoto(String citoyenId, String photoUrl) async {
+  /// Photo du profil (citoyen), photo professionnelle (prestataire) ou logo
+  /// (entreprise), selon le compte connecté ; renvoie son adresse.
+  Future<String?> envoyerPhotoProfil(File photo) async {
     try {
-      await _client
-          .from('citoyens')
-          .update({'photo_url': photoUrl}).eq('citoyen_id', citoyenId);
+      final profil = await _api.envoyerFichiers('moi/photo', fichiers: {'fichier': photo})
+          as Map;
+      return (profil['photo_url'] ?? profil['logo_url']) as String?;
     } catch (e, st) {
-      throw mapError('ProfileRepository.updateCitoyenPhoto', e, st);
+      throw mapError('ProfileRepository.envoyerPhotoProfil', e, st);
     }
   }
 
   // --- Particulier (prestataire indépendant) ---
 
-  /// Crée la fiche artisan. À l'inscription seul le numéro vérifié est
-  /// connu : nom, prénom, services et photo sont complétés depuis l'espace
-  /// artisan (chaînes vides = « à compléter », voir `Particulier.profilManquant`).
   Future<void> createParticulier({
     required String id,
     required String telephone,
@@ -92,55 +89,21 @@ class ProfileRepository {
     String prenom = '',
     List<String> services = const [],
     String? photoProUrl,
-  }) async {
-    try {
-      await _client.from('particuliers').insert({
-        'id': id,
-        'nom': nom,
-        'prenom': prenom,
-        'services': services,
-        'telephone': telephone,
-        'photo_pro_url': photoProUrl ?? '',
-      });
-    } catch (e, st) {
-      throw mapError('ProfileRepository.createParticulier', e, st);
-    }
-  }
-
-  /// `true` si un autre compte prestataire (artisan ou entreprise) utilise
-  /// déjà ce numéro : typiquement un ancien compte « numéro + mot de passe »,
-  /// distinct du compte créé par le code WhatsApp.
-  Future<bool> isPhoneUsedByOtherPrestataire(
-      String phone, String exceptUserId) async {
-    try {
-      for (final table in const ['particuliers', 'entreprises']) {
-        final rows = await _client
-            .from(table)
-            .select('id')
-            .eq('telephone', phone)
-            .neq('id', exceptUserId)
-            .limit(1);
-        if (rows.isNotEmpty) return true;
-      }
-      return false;
-    } catch (e, st) {
-      throw mapError('ProfileRepository.isPhoneUsedByOtherPrestataire', e, st);
-    }
-  }
+  }) =>
+      createProfileEntry(id, 'particulier');
 
   Future<Particulier?> fetchParticulier(String id) async {
     try {
-      final data = await _client
-          .from('particuliers')
-          .select()
-          .eq('id', id)
-          .maybeSingle();
-      return data == null ? null : Particulier.fromMap(data);
+      return Particulier.fromMap(versParticulier(await _api.get('moi/prestataire')));
+    } on ApiException catch (e) {
+      if (e.statut == 403 || e.statut == 404) return null;
+      throw mapError('ProfileRepository.fetchParticulier', e);
     } catch (e, st) {
       throw mapError('ProfileRepository.fetchParticulier', e, st);
     }
   }
 
+  /// Le téléphone est l'identifiant de connexion : il ne se change pas.
   Future<void> updateParticulierInfo({
     required String id,
     required String nom,
@@ -149,35 +112,20 @@ class ProfileRepository {
     List<String>? services,
   }) async {
     try {
-      await _client.from('particuliers').update({
+      await _api.patch('moi/prestataire', {
         'nom': nom,
-        'telephone': telephone,
         if (prenom != null) 'prenom': prenom,
         if (services != null) 'services': services,
-      }).eq('id', id);
+      });
     } catch (e, st) {
       throw mapError('ProfileRepository.updateParticulierInfo', e, st);
     }
   }
 
-  Future<void> updateParticulierPhoto(String id, String photoUrl) async {
-    try {
-      await _client
-          .from('particuliers')
-          .update({'photo_pro_url': photoUrl}).eq('id', id);
-    } catch (e, st) {
-      throw mapError('ProfileRepository.updateParticulierPhoto', e, st);
-    }
-  }
-
+  /// Essai gratuit (une seule fois) ; sa durée est fixée par le serveur.
   Future<void> startFreeTrial(String id, {required Duration duration}) async {
     try {
-      final expiry = DateTime.now().add(duration);
-      await _client.from('particuliers').update({
-        'essai_utilise': true,
-        'type_abonnement': 'ESSAI',
-        'abonnement_expire_at': expiry.toUtc().toIso8601String(),
-      }).eq('id', id);
+      await _api.post('moi/prestataire/essai');
     } catch (e, st) {
       throw mapError('ProfileRepository.startFreeTrial', e, st);
     }
@@ -193,13 +141,11 @@ class ProfileRepository {
     String? logoUrl,
   }) async {
     try {
-      await _client.from('entreprises').insert({
-        'id': id,
+      await _api.put('moi/entreprise', {
         'nom_entreprise': nomEntreprise,
         'secteur_activite': secteurActivite,
-        'telephone': telephone,
-        'logo_url': logoUrl ?? '',
       });
+      await _api.session.majType('entreprise');
     } catch (e, st) {
       throw mapError('ProfileRepository.createEntreprise', e, st);
     }
@@ -207,9 +153,11 @@ class ProfileRepository {
 
   Future<Entreprise?> fetchEntreprise(String id) async {
     try {
-      final data =
-          await _client.from('entreprises').select().eq('id', id).maybeSingle();
-      return data == null ? null : Entreprise.fromMap(data);
+      final d = await _api.get('moi/entreprise');
+      return Entreprise.fromMap((d as Map).cast<String, dynamic>());
+    } on ApiException catch (e) {
+      if (e.statut == 403 || e.statut == 404) return null;
+      throw mapError('ProfileRepository.fetchEntreprise', e);
     } catch (e, st) {
       throw mapError('ProfileRepository.fetchEntreprise', e, st);
     }
@@ -221,30 +169,16 @@ class ProfileRepository {
     required String telephone,
   }) async {
     try {
-      await _client.from('entreprises').update({
-        'nom_entreprise': nomEntreprise,
-        'telephone': telephone,
-      }).eq('id', id);
+      await _api.patch('moi/entreprise', {'nom_entreprise': nomEntreprise});
     } catch (e, st) {
       throw mapError('ProfileRepository.updateEntreprise', e, st);
     }
   }
 
-  Future<void> updateEntrepriseLogo(String id, String logoUrl) async {
-    try {
-      await _client
-          .from('entreprises')
-          .update({'logo_url': logoUrl}).eq('id', id);
-    } catch (e, st) {
-      throw mapError('ProfileRepository.updateEntrepriseLogo', e, st);
-    }
-  }
-
-  /// Retire l'entreprise de la plateforme (la ligne métier seulement : le
-  /// compte Auth ne peut être supprimé que côté serveur, clé service_role).
+  /// Retire l'entreprise de la plateforme (ses signalements restent).
   Future<void> deleteEntreprise(String id) async {
     try {
-      await _client.from('entreprises').delete().eq('id', id);
+      await _api.delete('moi/entreprise');
     } catch (e, st) {
       throw mapError('ProfileRepository.deleteEntreprise', e, st);
     }

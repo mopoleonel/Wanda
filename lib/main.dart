@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
+
+import 'core/api/session.dart';
 import 'core/notifications/push_notification_service.dart';
+import 'core/providers/repository_providers.dart';
 import 'core/router/app_router.dart';
 import 'core/theme/app_theme.dart';
 
@@ -17,21 +18,16 @@ Future<void> main() async {
     systemNavigationBarIconBrightness: Brightness.dark,
   ));
   await PushNotificationService.initializeFirebase();
-  await dotenv.load(fileName: ".env");
 
-  final supabaseUrl = dotenv.env['SUPABASE_URL'];
-  final supabaseAnonKey = dotenv.env['SUPABASE_ANON_KEY'];
-  if (supabaseUrl == null || supabaseAnonKey == null) {
-    throw StateError(
-        'SUPABASE_URL et SUPABASE_ANON_KEY doivent être définis dans .env');
-  }
+  // Session du dernier lancement (jetons de l'API WANDA, stockage chiffré).
+  // L'adresse de l'API est fixée à la compilation (--dart-define=API_URL).
+  final session = GestionSession(StockageSessionSecurise());
+  await session.charger();
 
-  await Supabase.initialize(
-    url: supabaseUrl,
-    anonKey: supabaseAnonKey,
-  );
-
-  runApp(const ProviderScope(child: MyApp()));
+  runApp(ProviderScope(
+    overrides: [gestionSessionProvider.overrideWithValue(session)],
+    child: const MyApp(),
+  ));
 }
 
 class MyApp extends ConsumerWidget {

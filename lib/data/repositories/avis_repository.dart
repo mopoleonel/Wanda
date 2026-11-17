@@ -1,17 +1,14 @@
-import 'package:supabase_flutter/supabase_flutter.dart';
-
+import '../../core/api/api_client.dart';
 import '../../core/error/error_mapper.dart';
 import '../models/avis_prestataire.dart';
 
-/// Avis citoyens sur les prestataires, et agrégation en note moyenne.
-///
-/// C'est ici que se corrige le bug trouvé lors de l'audit : la note "5.0"
-/// était codée en dur dans l'UI alors que les vrais avis étaient bien
-/// enregistrés en base sans jamais être lus.
+/// Avis des clients sur les prestataires, et notes moyennes.
 class AvisRepository {
-  final SupabaseClient _client;
-  AvisRepository(this._client);
+  final ApiClient _api;
+  AvisRepository(this._api);
 
+  /// Note d'une mission terminée (une seule par mission, vérifié par le
+  /// serveur).
   Future<void> create({
     required String sollicitationId,
     required String prestataireId,
@@ -20,12 +17,9 @@ class AvisRepository {
     String? commentaire,
   }) async {
     try {
-      await _client.from('avis_prestataires').insert({
-        'sollicitation_id': sollicitationId,
-        'prestataire_id': prestataireId,
-        'citoyen_id': citoyenId,
+      await _api.post('demandes/$sollicitationId/avis', {
         'note': note,
-        'commentaire': commentaire,
+        'commentaire': commentaire ?? '',
       });
     } catch (e, st) {
       throw mapError('AvisRepository.create', e, st);
@@ -37,17 +31,19 @@ class AvisRepository {
     return summaries[prestataireId] ?? RatingSummary.empty;
   }
 
-  /// Récupère les moyennes de plusieurs prestataires en une seule requête,
-  /// pour éviter le problème N+1 quand on affiche une liste d'experts.
+  /// Moyennes de plusieurs prestataires en une seule requête.
   Future<Map<String, RatingSummary>> averagesForPrestataires(
       List<String> prestataireIds) async {
     if (prestataireIds.isEmpty) return {};
     try {
-      final rows = await _client
-          .from('avis_prestataires')
-          .select('prestataire_id, note')
-          .inFilter('prestataire_id', prestataireIds);
-      return aggregateRatings(List<Map<String, dynamic>>.from(rows as List));
+      final d = await _api.get('notes', query: {'ids': prestataireIds.join(',')}) as Map;
+      return {
+        for (final e in d.entries)
+          '${e.key}': RatingSummary(
+            average: ((e.value as Map)['moyenne'] as num).toDouble(),
+            count: ((e.value as Map)['nombre'] as num).toInt(),
+          ),
+      };
     } catch (e, st) {
       throw mapError('AvisRepository.averagesForPrestataires', e, st);
     }
@@ -55,7 +51,7 @@ class AvisRepository {
 }
 
 /// Regroupe des lignes brutes `{prestataire_id, note}` en moyenne par
-/// prestataire. Extrait en fonction pure (testable sans mocker Supabase).
+/// prestataire (fonction pure, gardée pour les calculs locaux et les tests).
 Map<String, RatingSummary> aggregateRatings(List<Map<String, dynamic>> rows) {
   final byPrestataire = <String, List<int>>{};
   for (final row in rows) {

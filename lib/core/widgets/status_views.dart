@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
 
-/// États partagés (chargement / erreur / vide) des listes Supabase.
+/// États partagés (chargement / erreur / vide) des listes.
 class LoadingView extends StatelessWidget {
   const LoadingView({super.key});
 

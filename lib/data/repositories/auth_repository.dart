@@ -1,9 +1,9 @@
-import 'package:supabase_flutter/supabase_flutter.dart';
-
+import '../../core/api/api_client.dart';
+import '../../core/api/session.dart';
 import '../../core/error/app_exception.dart';
 import '../../core/error/error_mapper.dart';
 
-/// Types de compte gérés par l'app. Reflète la colonne `profiles.user_type`.
+/// Types de compte gérés par l'app (champ `type_compte` de l'API).
 enum UserType { citoyen, particulier, entreprise }
 
 UserType? userTypeFromString(String? value) {
@@ -19,50 +19,57 @@ UserType? userTypeFromString(String? value) {
   }
 }
 
-/// Authentification Supabase + résolution du type de compte
-/// (`profiles.user_type`). Toute la logique d'auth passait auparavant
-/// directement par `Supabase.instance.client` dans chaque écran.
+/// Connexion par code WhatsApp (API WANDA) et type du compte connecté.
 class AuthRepository {
-  final SupabaseClient _client;
-  AuthRepository(this._client);
+  final ApiClient _api;
+  AuthRepository(this._api);
 
-  String? get currentUserId => _client.auth.currentUser?.id;
+  GestionSession get _session => _api.session;
+
+  String? get currentUserId => _session.courante?.userId;
 
   /// `true` si la session a été ouverte par un numéro vérifié (WhatsApp).
-  bool get hasVerifiedPhone =>
-      (_client.auth.currentUser?.phone ?? '').isNotEmpty;
+  bool get hasVerifiedPhone => (_session.courante?.telephone ?? '').isNotEmpty;
 
-  /// Envoie un code à usage unique sur WhatsApp. Crée le compte Supabase Auth
-  /// s'il n'existe pas encore : inscription et connexion sont le même flux.
-  /// [phone] doit être au format E.164 (voir `normalizePhone`).
+  /// Le dernier code vérifié a créé le compte (premier passage).
+  bool dernierCompteNouveau = false;
+
+  /// Envoie un code à usage unique sur WhatsApp ; inscription et connexion
+  /// sont le même flux. [phone] au format E.164 (voir `normalizePhone`).
   Future<void> sendWhatsAppOtp(String phone) async {
     try {
-      await _client.auth.signInWithOtp(
-        phone: phone,
-        channel: OtpChannel.whatsapp,
-      );
+      await _api.postPublic('auth/code', {'telephone': phone});
     } catch (e, st) {
       throw mapError('AuthRepository.sendWhatsAppOtp', e, st);
     }
   }
 
-  /// Vérifie le code reçu sur WhatsApp et ouvre la session.
-  /// Retourne l'id de l'utilisateur connecté.
+  /// Vérifie le code et ouvre la session ; renvoie l'id de l'utilisateur.
+  /// [typeCompte] : type à donner au compte s'il vient d'être créé (le
+  /// serveur refuse un numéro déjà lié à un autre type de compte).
   Future<String> verifyWhatsAppOtp({
     required String phone,
     required String code,
+    String? typeCompte,
   }) async {
     try {
-      final res = await _client.auth.verifyOTP(
-        phone: phone,
-        token: code.trim(),
-        type: OtpType.sms,
-      );
-      final userId = res.user?.id;
-      if (userId == null) {
-        throw const AppException('Code invalide ou expiré.');
-      }
-      return userId;
+      final d = await _api.postPublic('auth/connexion', {
+        'telephone': phone,
+        'code': code.trim(),
+        if (typeCompte != null) 'type_compte': typeCompte,
+      }) as Map;
+      final u = (d['utilisateur'] as Map).cast<String, dynamic>();
+      final id = u['id'] as String?;
+      if (id == null) throw const AppException('Code invalide ou expiré.');
+      dernierCompteNouveau = d['nouveau'] == true;
+      await _session.ouvrir(Session(
+        acces: d['acces'] as String,
+        rafraichissement: d['rafraichissement'] as String,
+        userId: id,
+        telephone: (u['telephone'] as String?) ?? phone,
+        typeCompte: (u['type_compte'] as String?) ?? '',
+      ));
+      return id;
     } catch (e, st) {
       throw mapError('AuthRepository.verifyWhatsAppOtp', e, st);
     }
@@ -70,20 +77,19 @@ class AuthRepository {
 
   Future<void> signOut() async {
     try {
-      await _client.auth.signOut();
+      await _session.fermer();
     } catch (e, st) {
       throw mapError('AuthRepository.signOut', e, st);
     }
   }
 
+  /// Type du compte connecté, tel que le serveur le connaît.
   Future<UserType?> fetchUserType(String userId) async {
     try {
-      final profile = await _client
-          .from('profiles')
-          .select('user_type')
-          .eq('id', userId)
-          .maybeSingle();
-      return userTypeFromString(profile?['user_type'] as String?);
+      final d = await _api.get('moi') as Map;
+      final type = ((d['utilisateur'] as Map?)?['type_compte'] as String?) ?? '';
+      await _session.majType(type);
+      return userTypeFromString(type);
     } catch (e, st) {
       throw mapError('AuthRepository.fetchUserType', e, st);
     }

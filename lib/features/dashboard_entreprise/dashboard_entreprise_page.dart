@@ -102,20 +102,16 @@ class _DashboardEntreprisePageState
 
   Future<void> _updateLogo() async {
     try {
-      final image = await ImagePicker()
-          .pickImage(source: ImageSource.gallery, imageQuality: 70);
+      final image = await ImagePicker().pickImage(
+          source: ImageSource.gallery,
+          maxWidth: 1024,
+          maxHeight: 1024,
+          imageQuality: 70);
       if (image == null) return;
       setState(() => isLoading = true);
-      final fileName = 'logo_$_userId.jpg';
-      final publicUrl = await ref.read(storageRepositoryProvider).uploadImage(
-            bucket: 'entreprise_assets',
-            path: 'logos/$fileName',
-            file: File(image.path),
-            upsert: true,
-          );
       await ref
           .read(profileRepositoryProvider)
-          .updateEntrepriseLogo(_userId, publicUrl);
+          .envoyerPhotoProfil(File(image.path));
       _showSnackBar("Logo mis à jour !", isError: false);
       _loadData();
     } on AppException catch (e) {

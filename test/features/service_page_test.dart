@@ -59,23 +59,12 @@ class _FakePrestataires extends Fake implements PrestataireRepository {
 class _FakeSollicitations extends Fake implements SollicitationRepository {
   final controller = StreamController<List<Sollicitation>>.broadcast();
   int listens = 0;
-  final created = <String>[];
-
   @override
   Stream<List<Sollicitation>> streamForCitoyen(String citoyenId) {
     listens++;
     return controller.stream;
   }
 
-  @override
-  Future<void> create({
-    required String prestataireId,
-    required String citoyenId,
-    required String nomCitoyen,
-    String? prenomCitoyen,
-    required String numeroCitoyen,
-  }) async =>
-      created.add(prestataireId);
 }
 
 const _paul = Particulier(
@@ -283,8 +272,6 @@ void main() {
 
     expect(h.reservation!.service, CategorieService.dechets);
     expect(h.reservation!.prestataire!.id, 'p2');
-    expect(h.sollicitations.created, isEmpty,
-        reason: 'plus de sollicitation sans prix');
     await tester.pumpWidget(const SizedBox());
   });
 

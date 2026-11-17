@@ -1,27 +1,19 @@
-import 'package:supabase_flutter/supabase_flutter.dart';
-
+import '../../core/api/api_client.dart';
 import '../../core/error/error_mapper.dart';
 
-/// Tokens FCM enregistrés pour les notifications push (voir
-/// supabase/sql/002_device_tokens.sql).
+/// Appareils inscrits aux notifications push (jetons Firebase).
 class NotificationRepository {
-  final SupabaseClient _client;
-  NotificationRepository(this._client);
+  final ApiClient _api;
+  NotificationRepository(this._api);
 
+  /// Le jeton est rattaché au compte connecté (côté serveur).
   Future<void> registerToken({
     required String userId,
     required String fcmToken,
     String platform = 'android',
   }) async {
     try {
-      await _client.from('device_tokens').upsert(
-        {
-          'user_id': userId,
-          'fcm_token': fcmToken,
-          'platform': platform,
-        },
-        onConflict: 'fcm_token',
-      );
+      await _api.post('moi/appareils', {'fcm_token': fcmToken, 'plateforme': platform});
     } catch (e, st) {
       throw mapError('NotificationRepository.registerToken', e, st);
     }
@@ -29,7 +21,7 @@ class NotificationRepository {
 
   Future<void> unregisterToken(String fcmToken) async {
     try {
-      await _client.from('device_tokens').delete().eq('fcm_token', fcmToken);
+      await _api.delete('moi/appareils/${Uri.encodeComponent(fcmToken)}');
     } catch (e, st) {
       throw mapError('NotificationRepository.unregisterToken', e, st);
     }

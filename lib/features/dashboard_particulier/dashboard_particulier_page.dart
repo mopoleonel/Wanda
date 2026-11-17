@@ -4,7 +4,7 @@
 // reçues, disponibilité, profil, abonnement.
 //
 // Changements vs original :
-// - Repositories au lieu d'appels Supabase directs.
+// - Repositories au lieu d'appels réseau directs.
 // - La note affichée est la vraie moyenne agrégée (avant : "5.0" en dur).
 // - Passer "en ligne" capture la position GPS, utilisée pour le tri par
 //   proximité côté citoyen (avant : aucune position stockée).
@@ -1482,19 +1482,18 @@ class _DashboardParticulierPageState
 
   Future<void> _pickImg() async {
     try {
-      final img = await ImagePicker()
-          .pickImage(source: ImageSource.gallery, imageQuality: 60);
+      final img = await ImagePicker().pickImage(
+          source: ImageSource.gallery,
+          maxWidth: 1024,
+          maxHeight: 1024,
+          imageQuality: 60);
       if (img == null) return;
-      final url = await ref.read(storageRepositoryProvider).uploadImage(
-            bucket: 'profils',
-            path: 'pro_$_userId.jpg',
-            file: File(img.path),
-            upsert: true,
-          );
       await ref
           .read(profileRepositoryProvider)
-          .updateParticulierPhoto(_userId, url);
+          .envoyerPhotoProfil(File(img.path));
       _loadData();
+    } on AppException catch (e) {
+      _showSnackBar(e.message);
     } catch (e) {
       _showSnackBar("Erreur lors de l'envoi de la photo.");
     }

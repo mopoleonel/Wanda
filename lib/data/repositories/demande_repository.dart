@@ -1,89 +1,75 @@
 import 'dart:io';
 
-import 'package:supabase_flutter/supabase_flutter.dart';
-
-import '../../core/error/app_exception.dart';
+import '../../core/api/api_client.dart';
 import '../../core/error/app_logger.dart';
 import '../../core/error/error_mapper.dart';
+import '../api/adaptateurs.dart';
 import '../models/ajustement.dart';
 import '../models/analyse_ia.dart';
 import '../models/demande_menage.dart';
 import '../pricing/tarification.dart';
 
 /// Demandes de services ménagers : photos privées, analyse IA, prix et
-/// création côté serveur, refus, ajustements, passages d'abonnement.
+/// création par le serveur, refus, ajustements, passages d'abonnement.
 ///
-/// Le prix n'est jamais envoyé par l'app : `creer_demande` le recalcule
-/// (supabase/sql/011). Les photos vont dans le bucket privé « demandes »,
-/// dans le dossier de leur auteur.
+/// Le prix n'est jamais envoyé par l'app : le serveur le recalcule à la
+/// création. Les photos sont privées ; l'app n'en reçoit que des liens de
+/// courte durée.
 class DemandeRepository {
-  final SupabaseClient _client;
-  DemandeRepository(this._client);
+  final ApiClient _api;
+  DemandeRepository(this._api);
 
-  static const bucket = 'demandes';
-
-  String? get _uid => _client.auth.currentUser?.id;
-
-  /// Dépose une photo (déjà compressée) et renvoie son chemin.
+  /// Envoie une photo (déjà compressée) et renvoie son chemin, à joindre
+  /// ensuite à la demande ou à l'ajustement.
   Future<String> envoyerPhoto(File photo, {required String dossier}) async {
-    final uid = _uid;
-    if (uid == null) {
-      throw const AppException('Connectez-vous pour joindre une photo.');
-    }
-    final chemin = '$uid/$dossier/${DateTime.now().millisecondsSinceEpoch}.jpg';
     try {
-      await _client.storage.from(bucket).upload(chemin, photo,
-          fileOptions: const FileOptions(contentType: 'image/jpeg'));
-      return chemin;
+      final d = await _api.envoyerFichiers('photos',
+          champs: {'dossier': dossier}, fichiers: {'fichier': photo}) as Map;
+      return d['chemin'] as String;
     } catch (e, st) {
       throw mapError('DemandeRepository.envoyerPhoto', e, st);
     }
   }
 
-  /// URL temporaire pour afficher une photo privée (10 minutes).
+  /// Lien temporaire pour afficher une photo privée (si on y a droit).
   Future<String> urlPhoto(String chemin) async {
     try {
-      return await _client.storage.from(bucket).createSignedUrl(chemin, 600);
+      final d = await _api.get('photos/lien', query: {'chemin': chemin}) as Map;
+      return d['url'] as String;
     } catch (e, st) {
       throw mapError('DemandeRepository.urlPhoto', e, st);
     }
   }
 
-  /// Analyse IA des photos. Ne lève jamais d'erreur : en cas d'échec
-  /// (réseau, quota, IA indisponible), renvoie null et la demande continue
-  /// sur le questionnaire seul.
+  /// Analyse IA des photos. Ne lève jamais d'erreur : sans IA (réseau,
+  /// quota, clé absente), renvoie null et le prix vient du questionnaire.
   Future<AnalyseIa?> analyser(DemandeMenage d, List<String> photos) async {
     try {
-      final res = await _client.functions.invoke(
-        'analyze-demande-menage',
-        body: {
-          'service': d.service.code,
-          'reponses': d.reponses,
-          'photos': photos,
-        },
-      ).timeout(const Duration(seconds: 35));
-      final data = res.data;
-      if (data is! Map || data['resultat'] is! Map) return null;
-      return AnalyseIa.fromMap(
-          (data['resultat'] as Map).cast<String, dynamic>(),
-          id: data['analyse_id'] as String?);
+      final r = await _api.post('demandes/analyse', {
+        'service': d.service.code,
+        'reponses': d.reponses,
+        'photos': photos,
+      });
+      if (r is! Map || r['resultat'] is! Map) return null;
+      return AnalyseIa.fromMap((r['resultat'] as Map).cast<String, dynamic>(),
+          id: r['analyse_id'] as String?);
     } catch (e, st) {
       AppLogger.error('DemandeRepository.analyser', e, st);
       return null;
     }
   }
 
-  /// Prix calculé par le serveur (fonction SQL calculer_prix_demande).
+  /// Prix calculé par le serveur : c'est lui qui sera enregistré.
   Future<EstimationPrix> prixServeur(DemandeMenage d) async {
     try {
-      final res = await _client.rpc('calculer_prix_demande', params: {
-        'p_service': d.service.code,
-        'p_formule': d.formule.code,
-        'p_frequence': d.frequence?.code,
-        'p_reponses': d.reponses,
-        'p_produits': d.produitsFournis,
-      }).timeout(const Duration(seconds: 15));
-      return EstimationPrix.fromServeur((res as Map).cast<String, dynamic>());
+      final r = await _api.post('prix', {
+        'service': d.service.code,
+        'formule': d.formule.code,
+        'frequence': d.frequence?.code,
+        'reponses': d.reponses,
+        'produits': d.produitsFournis,
+      });
+      return EstimationPrix.fromServeur((r as Map).cast<String, dynamic>());
     } catch (e, st) {
       throw mapError('DemandeRepository.prixServeur', e, st);
     }
@@ -99,19 +85,19 @@ class DemandeRepository {
     required Creneau creneau,
   }) async {
     try {
-      final id = await _client.rpc('creer_demande', params: {
-        'p_prestataire': prestataireId,
-        'p_service': demande.service.code,
-        'p_formule': demande.formule.code,
-        'p_frequence': demande.frequence?.code,
-        'p_reponses': demande.reponses,
-        'p_produits': demande.produitsFournis,
-        'p_photos': photos,
-        'p_analyse': analyseId,
-        'p_date': _jour(date),
-        'p_creneau': creneau.code,
-      }).timeout(const Duration(seconds: 20));
-      return id as String;
+      final r = await _api.post('demandes', {
+        'prestataire': prestataireId,
+        'service': demande.service.code,
+        'formule': demande.formule.code,
+        'frequence': demande.frequence?.code,
+        'reponses': demande.reponses,
+        'produits': demande.produitsFournis,
+        'photos': photos,
+        if (analyseId != null) 'analyse': analyseId,
+        'date_souhaitee': _jour(date),
+        'creneau': creneau.code,
+      }) as Map;
+      return r['id'] as String;
     } catch (e, st) {
       throw mapError('DemandeRepository.creer', e, st);
     }
@@ -120,36 +106,28 @@ class DemandeRepository {
   /// Le prestataire décline la demande (motif facultatif, montré au client).
   Future<void> refuser(String sollicitationId, {String? motif}) async {
     try {
-      await _client.from('sollicitations').update({
-        'statut': 'refuse',
-        if (motif != null && motif.trim().isNotEmpty)
-          'motif_refus': motif.trim(),
-      }).eq('id', sollicitationId);
+      await _api.post('demandes/$sollicitationId/refuser', {
+        'motif': (motif ?? '').trim(),
+      });
     } catch (e, st) {
       throw mapError('DemandeRepository.refuser', e, st);
     }
   }
 
-  /// Signal temps réel (migration 015) : un ajustement ou un passage a été
-  /// ajouté ou modifié. Les règles RLS limitent aux lignes de l'utilisateur ;
-  /// l'écran relit ensuite le détail avec [ajustements] et [passages].
-  Stream<void> changementsSuivi(String table) {
-    assert(table == 'ajustements' || table == 'passages');
-    return _client.from(table).stream(primaryKey: ['id']).map((_) {});
-  }
+  /// Les ajustements et passages modifient la demande elle-même (date de
+  /// modification, ajustement en attente, nombre de passages) : le suivi
+  /// des demandes suffit à les voir arriver, aucun flux séparé.
+  Stream<void> changementsSuivi(String table) => const Stream.empty();
 
   Future<List<Ajustement>> ajustements(List<String> sollicitationIds) async {
     if (sollicitationIds.isEmpty) return const [];
     try {
-      final rows = await _client
-          .from('ajustements')
-          .select()
-          .inFilter('sollicitation_id', sollicitationIds)
-          .order('created_at', ascending: false);
-      return [
-        for (final r in rows as List)
-          Ajustement.fromMap(Map<String, dynamic>.from(r as Map)),
-      ];
+      final tous = <Ajustement>[];
+      for (final id in sollicitationIds) {
+        final d = await _api.get('demandes/$id/ajustements');
+        tous.addAll([for (final a in liste(d)) Ajustement.fromMap(versAjustement(a))]);
+      }
+      return tous;
     } catch (e, st) {
       throw mapError('DemandeRepository.ajustements', e, st);
     }
@@ -163,23 +141,20 @@ class DemandeRepository {
     List<String> photos = const [],
   }) async {
     try {
-      await _client.rpc('demander_ajustement', params: {
-        'p_sollicitation': sollicitationId,
-        'p_minutes': minutes,
-        'p_produits': produits,
-        'p_motif': motif,
-        'p_photos': photos,
+      await _api.post('demandes/$sollicitationId/ajustements', {
+        'minutes': minutes,
+        'produits': produits,
+        'motif': motif,
+        'photos': photos,
       });
     } catch (e, st) {
       throw mapError('DemandeRepository.demanderAjustement', e, st);
     }
   }
 
-  Future<void> repondreAjustement(String ajustementId,
-      {required bool accepte}) async {
+  Future<void> repondreAjustement(String ajustementId, {required bool accepte}) async {
     try {
-      await _client.rpc('repondre_ajustement',
-          params: {'p_ajustement': ajustementId, 'p_accepte': accepte});
+      await _api.post('ajustements/$ajustementId/repondre', {'accepte': accepte});
     } catch (e, st) {
       throw mapError('DemandeRepository.repondreAjustement', e, st);
     }
@@ -188,15 +163,10 @@ class DemandeRepository {
   /// Passages effectués d'un abonnement, du plus récent au plus ancien.
   Future<List<DateTime>> passages(String sollicitationId) async {
     try {
-      final rows = await _client
-          .from('passages')
-          .select('effectue_le')
-          .eq('sollicitation_id', sollicitationId)
-          .order('effectue_le', ascending: false);
+      final d = await _api.get('demandes/$sollicitationId/passages');
       return [
-        for (final r in rows as List)
-          if (DateTime.tryParse('${(r as Map)['effectue_le']}') case final d?)
-            d,
+        for (final p in (d is List ? d : const []))
+          if (DateTime.tryParse('$p') case final date?) date.toLocal(),
       ];
     } catch (e, st) {
       throw mapError('DemandeRepository.passages', e, st);
@@ -205,8 +175,7 @@ class DemandeRepository {
 
   Future<void> pointerPassage(String sollicitationId) async {
     try {
-      await _client
-          .rpc('pointer_passage', params: {'p_sollicitation': sollicitationId});
+      await _api.post('demandes/$sollicitationId/passages');
     } catch (e, st) {
       throw mapError('DemandeRepository.pointerPassage', e, st);
     }
@@ -216,21 +185,16 @@ class DemandeRepository {
       '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
 }
 
-/// Paramètres de tarification (table `tarifs`, lecture seule).
+/// Paramètres de prix fixés par WANDA (lecture seule).
 class TarifRepository {
-  final SupabaseClient _client;
-  TarifRepository(this._client);
+  final ApiClient _api;
+  TarifRepository(this._api);
 
-  /// Tarifs en base ; en cas d'échec, les valeurs de départ (l'estimation en
-  /// direct reste possible, le prix final vient de toute façon du serveur).
+  /// Tarifs du serveur ; en cas d'échec, les valeurs de départ (l'estimation
+  /// en direct reste possible, le prix final vient du serveur).
   Future<Tarifs> charger() async {
     try {
-      final rows = await _client
-          .from('tarifs')
-          .select('service, cle, valeur')
-          .timeout(const Duration(seconds: 10));
-      return Tarifs.depuisLignes(
-          [for (final r in rows as List) Map<String, dynamic>.from(r as Map)]);
+      return Tarifs.depuisLignes(lignesTarifs(await _api.get('tarifs')));
     } catch (e, st) {
       AppLogger.error('TarifRepository.charger', e, st);
       return Tarifs.defaut;

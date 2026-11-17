@@ -1,41 +1,27 @@
-import 'package:supabase_flutter/supabase_flutter.dart';
-
+import '../../core/api/api_client.dart';
+import '../../core/api/sondage.dart';
 import '../../core/error/error_mapper.dart';
+import '../api/adaptateurs.dart';
 import '../models/particulier.dart';
 
-/// Liste temps réel des prestataires indépendants ("particuliers") et
-/// gestion de leur disponibilité/position.
+/// Prestataires en ligne (côté client) et disponibilité du prestataire
+/// connecté.
 class PrestataireRepository {
-  final SupabaseClient _client;
-  PrestataireRepository(this._client);
+  final ApiClient _api;
+  PrestataireRepository(this._api);
 
-  /// Flux temps réel des prestataires actuellement disponibles. Le filtrage
-  /// par catégorie se fait côté client (peu de lignes, pas besoin d'un
-  /// aller-retour serveur supplémentaire par changement de filtre).
-  Stream<List<Particulier>> streamAvailable() {
-    return _client
-        .from('particuliers')
-        .stream(primaryKey: ['id'])
-        .eq('is_available', true)
-        .limit(200)
-        .map((rows) => rows.map(Particulier.fromMap).toList());
-  }
+  /// Prestataires réservables (en ligne, abonnés, avec au moins un
+  /// service), relus régulièrement. Le filtre par service se fait dans
+  /// l'écran.
+  Stream<List<Particulier>> streamAvailable() =>
+      sonder(() => _api.get('prestataires'), intervalle: const Duration(seconds: 20))
+          .map((d) => [for (final p in liste(d)) Particulier.fromMap(versParticulier(p))]);
 
-  /// Prestataires en ligne qui proposent [serviceCode] (choix du
-  /// prestataire au moment de réserver).
+  /// Prestataires en ligne qui proposent [serviceCode].
   Future<List<Particulier>> disponiblesPour(String serviceCode) async {
     try {
-      final rows = await _client
-          .from('particuliers')
-          .select()
-          .eq('is_available', true)
-          .contains('services', [serviceCode])
-          .limit(100)
-          .timeout(const Duration(seconds: 10));
-      return [
-        for (final r in rows as List)
-          Particulier.fromMap(Map<String, dynamic>.from(r as Map)),
-      ];
+      final d = await _api.get('prestataires', query: {'service': serviceCode});
+      return [for (final p in liste(d)) Particulier.fromMap(versParticulier(p))];
     } catch (e, st) {
       throw mapError('PrestataireRepository.disponiblesPour', e, st);
     }
@@ -43,20 +29,17 @@ class PrestataireRepository {
 
   Future<Particulier?> getById(String id) async {
     try {
-      final data = await _client
-          .from('particuliers')
-          .select()
-          .eq('id', id)
-          .maybeSingle();
-      return data == null ? null : Particulier.fromMap(data);
+      return Particulier.fromMap(versParticulier(await _api.get('prestataires/$id')));
+    } on ApiException catch (e) {
+      if (e.statut == 404) return null;
+      throw mapError('PrestataireRepository.getById', e);
     } catch (e, st) {
       throw mapError('PrestataireRepository.getById', e, st);
     }
   }
 
-  /// Passe le prestataire disponible/indisponible. Quand il se déclare
-  /// disponible, on capture sa position pour permettre le tri par proximité
-  /// côté citoyen.
+  /// En ligne / hors ligne. En ligne, la position permet aux clients de
+  /// trier par proximité ; le serveur exige un abonnement valide.
   Future<void> setAvailability(
     String id,
     bool isAvailable, {
@@ -64,12 +47,13 @@ class PrestataireRepository {
     double? longitude,
   }) async {
     try {
-      final update = <String, dynamic>{'is_available': isAvailable};
-      if (isAvailable && latitude != null && longitude != null) {
-        update['latitude'] = latitude;
-        update['longitude'] = longitude;
-      }
-      await _client.from('particuliers').update(update).eq('id', id);
+      await _api.post('moi/prestataire/en-ligne', {
+        'en_ligne': isAvailable,
+        if (isAvailable && latitude != null && longitude != null) ...{
+          'latitude': latitude,
+          'longitude': longitude,
+        },
+      });
     } catch (e, st) {
       throw mapError('PrestataireRepository.setAvailability', e, st);
     }

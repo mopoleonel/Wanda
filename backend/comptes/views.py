@@ -119,6 +119,28 @@ class Moi(APIView):
         )
 
 
+class ChoisirType(APIView):
+    """POST {type_compte: citoyen|particulier} : compte ouvert sans type
+    (premier code saisi dans l'espace prestataire) ; crée le profil vide.
+    Une entreprise passe par PUT /api/moi/entreprise."""
+
+    def post(self, request):
+        type_compte = request.data.get("type_compte")
+        if type_compte not in (Utilisateur.Type.CITOYEN, Utilisateur.Type.PARTICULIER):
+            raise ErreurMetier("NON_AUTORISE", status_code=400)
+        with transaction.atomic():
+            u = Utilisateur.objects.select_for_update().get(pk=request.user.pk)
+            if u.type_compte and u.type_compte != type_compte:
+                raise ErreurMetier("TYPE_COMPTE_FIGE", status_code=409)
+            if not u.type_compte:
+                u.type_compte = type_compte
+                u.save(update_fields=["type_compte"])
+            modele = Citoyen if type_compte == Utilisateur.Type.CITOYEN else Prestataire
+            modele.objects.get_or_create(utilisateur=u, defaults={"telephone": u.telephone})
+        u = Utilisateur.objects.get(pk=u.pk)
+        return Response({"utilisateur": UtilisateurSerializer(u).data, "profil": profil_de(u, request)})
+
+
 # --------------------------------------------------------------- profils
 
 
@@ -167,6 +189,14 @@ class MonEntreprise(APIView):
         s.is_valid(raise_exception=True)
         s.save()
         return Response(s.data)
+
+    def delete(self, request):
+        """Retire l'entreprise de la plateforme : ses signalements restent
+        (sans entreprise) et le numéro peut servir à un nouveau compte."""
+        with transaction.atomic():
+            Entreprise.objects.filter(utilisateur=request.user).delete()
+            Utilisateur.objects.filter(pk=request.user.pk).update(type_compte="")
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class MaPhoto(APIView):

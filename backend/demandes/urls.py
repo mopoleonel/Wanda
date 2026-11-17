@@ -20,6 +20,7 @@ urlpatterns = [
         name="ajustement-repondre",
     ),
     path("prestataires/<uuid:pk>/avis", views.AvisPrestataire.as_view(), name="prestataire-avis"),
+    path("notes", views.Notes.as_view(), name="notes"),
     path("photos", views.EnvoyerPhoto.as_view(), name="photos"),
     path("photos/lien", views.LienPhoto.as_view(), name="photo-lien"),
 ]

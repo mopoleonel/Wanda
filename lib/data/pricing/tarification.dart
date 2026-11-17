@@ -1,8 +1,8 @@
 // Calcul du prix d'une demande de service ménager.
 //
 // Le prix est FIXÉ PAR WANDA : temps estimé × tarif horaire + déplacement +
-// produits. Ce fichier est le MIROIR EXACT de la fonction SQL
-// `calculer_prix` (supabase/sql/009_tarification.sql) : l'app s'en sert pour
+// produits. Ce fichier est le MIROIR EXACT du
+// calcul du serveur (backend/tarification/calcul.py) : l'app s'en sert pour
 // afficher le prix en direct pendant le questionnaire, mais le prix
 // enregistré est toujours recalculé par le serveur. Toute modification ici
 // doit être reportée là-bas (les deux partagent les mêmes cas de test).

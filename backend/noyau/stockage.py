@@ -6,6 +6,13 @@ quelques minutes (equivalent des « URL signées » de Supabase Storage), et
 seules les personnes autorisées obtiennent ce lien.
 
 Pas de suppression ni de remplacement : ce sont des preuves en cas de litige.
+
+Deux sortes de liens :
+  * pièces privées (demandes, identités) : lien qui expire après quelques
+    minutes, donné seulement aux personnes autorisées ;
+  * photos de profil et de signalement, montrées à tous les utilisateurs
+    connectés : lien stable (même adresse à chaque fois), pour que l'app les
+    garde en cache au lieu de les retélécharger à chaque rafraîchissement.
 """
 import uuid
 
@@ -19,6 +26,7 @@ from .erreurs import ErreurMetier
 ESPACES = ("demandes", "identites", "profils", "signalements")
 _TYPES = {b"\xff\xd8\xff": ".jpg", b"\x89PNG": ".png"}
 _SEL = "wanda.fichier"
+ESPACES_STABLES = ("profils", "signalements")
 
 
 def _stockage():
@@ -60,15 +68,26 @@ def appartient_a(chemin, auteur_id):
 
 
 def lien_signe(request, chemin):
-    """Lien de téléchargement valable LIEN_PHOTO_DUREE secondes."""
-    jeton = signing.dumps(chemin, salt=_SEL)
+    """Lien de téléchargement : stable pour les espaces publics, valable
+    LIEN_PHOTO_DUREE secondes sinon."""
+    if chemin.split("/", 1)[0] in ESPACES_STABLES:
+        jeton = "s." + signing.Signer(salt=_SEL + ".stable").sign_object(chemin)
+    else:
+        jeton = "t." + signing.dumps(chemin, salt=_SEL)
     url = reverse("fichier-signe", args=[jeton])
     return request.build_absolute_uri(url) if request is not None else url
 
 
 def lire_jeton(jeton):
     try:
-        return signing.loads(jeton, salt=_SEL, max_age=settings.LIEN_PHOTO_DUREE)
+        if jeton.startswith("s."):
+            chemin = signing.Signer(salt=_SEL + ".stable").unsign_object(jeton[2:])
+            if chemin.split("/", 1)[0] not in ESPACES_STABLES:
+                raise signing.BadSignature
+            return chemin
+        if jeton.startswith("t."):
+            return signing.loads(jeton[2:], salt=_SEL, max_age=settings.LIEN_PHOTO_DUREE)
+        raise signing.BadSignature
     except signing.SignatureExpired:
         raise ErreurMetier("LIEN_EXPIRE", status_code=403)
     except signing.BadSignature:

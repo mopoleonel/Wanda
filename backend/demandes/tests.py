@@ -252,3 +252,24 @@ class Reservation(EssaiAvecFichiers):
         r = self.c.post("/api/demandes/analyse",
                         {"service": "menage", "photos": [chemin]}, format="json")
         self.assertEqual(r.status_code, 403)
+
+
+class NotesGroupees(EssaiAvecFichiers):
+    def test_moyennes_de_plusieurs_prestataires(self):
+        from .models import Avis
+        from .services import changer_statut, creer_demande
+
+        p1, p2 = creer_prestataire(), creer_prestataire("+237690000077")
+        client = creer_citoyen()
+        c = client_de(client)
+        for note in (4, 5):
+            chemin = self.envoyer_photo(c)
+            d = creer_demande(client, prestataire_id=p1.pk, service="menage", formule="ponctuelle",
+                              frequence="", reponses={"chambres": 1}, produits=False,
+                              photos=[chemin], analyse_id=None, date=timezone.localdate(),
+                              creneau="matin")
+            changer_statut(d.pk, p1, "accepte")
+            changer_statut(d.pk, p1, "termine")
+            Avis.objects.create(demande=d, prestataire_id=p1.pk, citoyen_id=client.pk, note=note)
+        r = c.get("/api/notes", {"ids": "{},{},pas-un-uuid".format(p1.pk, p2.pk)}).json()
+        self.assertEqual(r, {str(p1.pk): {"moyenne": 4.5, "nombre": 2}})

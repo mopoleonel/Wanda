@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/api/api_client.dart';
 import '../../core/error/app_exception.dart';
 import '../../core/providers/repository_providers.dart';
 import '../../core/router/app_routes.dart';
@@ -16,7 +17,6 @@ import '../../core/widgets/city_backdrop.dart';
 import '../../core/widgets/app_primary_button.dart';
 import '../../core/widgets/app_snackbar.dart';
 import '../../core/widgets/app_text_field.dart';
-import '../../data/repositories/auth_repository.dart';
 
 /// Étapes de l'écran citoyen.
 /// - [phone] / [code] : inscription ET connexion via un code WhatsApp
@@ -129,34 +129,19 @@ class _LoginCitoyenPageState extends ConsumerState<LoginCitoyenPage> {
     if (phone == null) return;
     await _run(() async {
       final auth = ref.read(authRepositoryProvider);
-      final userId =
-          await auth.verifyWhatsAppOtp(phone: phone, code: codeController.text);
-      final isNew = await _ensureCitoyenProfile(userId, phone);
-      _onSignedIn(userId, isNew: isNew);
+      // Le serveur crée le compte citoyen et son profil au premier passage,
+      // et refuse un numéro déjà lié à un compte prestataire.
+      final String userId;
+      try {
+        userId = await auth.verifyWhatsAppOtp(
+            phone: phone, code: codeController.text, typeCompte: 'citoyen');
+      } on ApiException catch (e) {
+        if (e.code != 'TYPE_COMPTE_FIGE') rethrow;
+        throw const AppException(
+            'Ce numéro est déjà lié à un compte prestataire.');
+      }
+      _onSignedIn(userId, isNew: auth.dernierCompteNouveau);
     });
-  }
-
-  /// Crée les lignes `profiles` + `citoyens` au premier passage.
-  /// Retourne `true` si le compte vient d'être créé.
-  Future<bool> _ensureCitoyenProfile(String userId, String phone) async {
-    final auth = ref.read(authRepositoryProvider);
-    final profiles = ref.read(profileRepositoryProvider);
-
-    final type = await auth.fetchUserType(userId);
-    if (type != null && type != UserType.citoyen) {
-      await auth.signOut();
-      throw const AppException(
-          "Ce numéro est déjà lié à un compte prestataire.");
-    }
-    if (type == null) {
-      await profiles.createProfileEntry(userId, 'citoyen');
-    }
-    // Couvre aussi une inscription interrompue entre les deux insertions.
-    if (await profiles.fetchCitoyen(userId) == null) {
-      await profiles.createCitoyen(citoyenId: userId, telephone: phone);
-      return true;
-    }
-    return false;
   }
 
   void _onSignedIn(String userId, {required bool isNew}) {

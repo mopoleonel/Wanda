@@ -1,5 +1,4 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../data/repositories/auth_repository.dart';
 import '../../data/repositories/avis_repository.dart';
@@ -9,70 +8,67 @@ import '../../data/repositories/prestataire_repository.dart';
 import '../../data/repositories/profile_repository.dart';
 import '../../data/repositories/signalement_repository.dart';
 import '../../data/repositories/sollicitation_repository.dart';
-import '../../data/repositories/storage_repository.dart';
 import '../../data/repositories/verification_repository.dart';
+import '../api/api_client.dart';
+import '../api/session.dart';
 import '../notifications/push_notification_service.dart';
 
-/// Client Supabase partagé. Toujours accédé via ce provider plutôt que
-/// `Supabase.instance.client` directement, pour rester testable (on peut
-/// override ce provider dans les tests).
-final supabaseClientProvider = Provider<SupabaseClient>((ref) {
-  return Supabase.instance.client;
+/// Session de connexion, chargée au démarrage (voir main.dart) ; remplacée
+/// par une session en mémoire dans les tests.
+final gestionSessionProvider = Provider<GestionSession>((ref) {
+  return GestionSession(StockageSessionMemoire());
+});
+
+/// Client de l'API WANDA, partagé par tous les dépôts.
+final apiClientProvider = Provider<ApiClient>((ref) {
+  return ApiClient(session: ref.watch(gestionSessionProvider));
 });
 
 final authRepositoryProvider = Provider<AuthRepository>((ref) {
-  return AuthRepository(ref.watch(supabaseClientProvider));
+  return AuthRepository(ref.watch(apiClientProvider));
 });
 
 final profileRepositoryProvider = Provider<ProfileRepository>((ref) {
-  return ProfileRepository(ref.watch(supabaseClientProvider));
+  return ProfileRepository(ref.watch(apiClientProvider));
 });
 
 final prestataireRepositoryProvider = Provider<PrestataireRepository>((ref) {
-  return PrestataireRepository(ref.watch(supabaseClientProvider));
+  return PrestataireRepository(ref.watch(apiClientProvider));
 });
 
-final sollicitationRepositoryProvider =
-    Provider<SollicitationRepository>((ref) {
-  return SollicitationRepository(ref.watch(supabaseClientProvider));
+final sollicitationRepositoryProvider = Provider<SollicitationRepository>((ref) {
+  return SollicitationRepository(ref.watch(apiClientProvider));
 });
 
 final signalementRepositoryProvider = Provider<SignalementRepository>((ref) {
-  return SignalementRepository(ref.watch(supabaseClientProvider));
+  return SignalementRepository(ref.watch(apiClientProvider));
 });
 
 final avisRepositoryProvider = Provider<AvisRepository>((ref) {
-  return AvisRepository(ref.watch(supabaseClientProvider));
-});
-
-final storageRepositoryProvider = Provider<StorageRepository>((ref) {
-  return StorageRepository(ref.watch(supabaseClientProvider));
+  return AvisRepository(ref.watch(apiClientProvider));
 });
 
 final verificationRepositoryProvider = Provider<VerificationRepository>((ref) {
-  return VerificationRepository(ref.watch(supabaseClientProvider));
+  return VerificationRepository(ref.watch(apiClientProvider));
 });
 
 final demandeRepositoryProvider = Provider<DemandeRepository>((ref) {
-  return DemandeRepository(ref.watch(supabaseClientProvider));
+  return DemandeRepository(ref.watch(apiClientProvider));
 });
 
 final tarifRepositoryProvider = Provider<TarifRepository>((ref) {
-  return TarifRepository(ref.watch(supabaseClientProvider));
+  return TarifRepository(ref.watch(apiClientProvider));
 });
 
 final notificationRepositoryProvider = Provider<NotificationRepository>((ref) {
-  return NotificationRepository(ref.watch(supabaseClientProvider));
+  return NotificationRepository(ref.watch(apiClientProvider));
 });
 
-final pushNotificationServiceProvider =
-    Provider<PushNotificationService>((ref) {
+final pushNotificationServiceProvider = Provider<PushNotificationService>((ref) {
   return PushNotificationService(ref.watch(notificationRepositoryProvider));
 });
 
-/// Émet à chaque changement d'état d'authentification Supabase (connexion,
-/// déconnexion, refresh de session) — utilisé par le router pour les
-/// redirections automatiques.
-final authStateChangesProvider = StreamProvider<AuthState>((ref) {
-  return ref.watch(supabaseClientProvider).auth.onAuthStateChange;
+/// Émet à chaque connexion ou déconnexion (session expirée comprise).
+final sessionChangesProvider = StreamProvider<Session?>((ref) {
+  return ref.watch(gestionSessionProvider).changements;
 });
