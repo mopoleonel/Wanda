@@ -136,6 +136,9 @@ class ApiClient {
   /// Un seul renouvellement à la fois, même si plusieurs requêtes échouent
   /// ensemble.
   Future<bool> _renouveler() => _renouvellement ??= () async {
+        // Laisse [_renouvellement] être affecté avant toute sortie : sinon le
+        // `finally` passerait avant et un futur terminé resterait en place.
+        await Future<void>.value();
         try {
           final s = session.courante;
           if (s == null) return false;
