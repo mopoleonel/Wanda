@@ -1,15 +1,20 @@
 # Wanda
 
-Application Flutter + Supabase de **services ménagers à domicile** (ménage et
+Application Flutter de **services ménagers à domicile** (ménage et
 nettoyage, linge, ramassage des poubelles, lutte contre les nuisibles) au
 **prix fixé par WANDA**, et de signalement d'incidents urbains (Cameroun).
+Le serveur est un back-end **Django** (`backend/`) ; Supabase n'est plus
+utilisé par l'app (voir « Historique Supabase » plus bas).
 
 ## Architecture
 
 ```
 lib/
   core/
-    error/        AppException + mapError : toute erreur Supabase/réseau est
+    api/           Client HTTP de l'API WANDA (jeton JWT renouvelé tout seul,
+                    session chiffrée sur le téléphone, suivi par
+                    interrogation régulière).
+    error/        AppException + mapError : toute erreur serveur/réseau est
                    traduite en message français avant d'atteindre l'UI.
     notifications/ Service FCM (voir section Notifications push ci-dessous).
     providers/     Providers Riverpod exposant les repositories.
@@ -17,31 +22,100 @@ lib/
     theme/         Couleurs, styles de texte, dégradés partagés.
     widgets/       Composants UI réutilisables (snackbar, boutons, états vides...).
   data/
+    api/           Adaptateurs : réponses JSON de Django -> modèles de l'app.
     models/        Modèles typés (Citoyen, Particulier, Entreprise, Signalement,
                     Sollicitation, AvisPrestataire, CategorieService,
                     DemandeMenage, Ajustement, AnalyseIa) avec fromMap.
-    pricing/       Calcul du prix d'une demande (miroir exact de la fonction
-                    SQL `calculer_prix`, pour l'estimation en direct).
-    repositories/  Toute la logique Supabase (auth, profils, stockage,
-                    sollicitations, signalements, avis, notifications) passe
-                    par ici — aucun écran n'appelle Supabase directement.
+    pricing/       Calcul du prix d'une demande (miroir exact du calcul du
+                    serveur, pour l'estimation en direct).
+    repositories/  Tous les appels au serveur passent par ici — aucun écran
+                    n'appelle l'API directement.
   features/        Un dossier par écran (auth, home, services, demande,
                     signalement, certification, dashboard_particulier,
-                    dashboard_entreprise).
-supabase/
-  functions/       Edge Functions (analyse IA, envoi de notifications push).
-  sql/             Scripts SQL à exécuter manuellement dans le SQL Editor.
+                    dashboard_entreprise). La réservation pose une question
+                    à la fois (`demande/parcours.dart`), puis montre le
+                    récapitulatif et le montant à payer.
+backend/           API Django (comptes, demandes, tarifs, vérifications,
+                    signalements, notifications) + administration.
+test_e2e/          Parcours complet contre un vrai serveur (lancé à la main).
+supabase/          Ancien back-end, gardé pour l'import des données.
 ```
 
-## Démarrage
+## Démarrage en local
 
-1. `flutter pub get`
-2. Copier `.env.example` vers `.env` et renseigner `SUPABASE_URL` /
-   `SUPABASE_ANON_KEY` (valeurs disponibles dans Dashboard Supabase >
-   Project Settings > API).
-3. `flutter run`
+### 1. Le serveur
 
-## Migrations SQL à appliquer
+```bash
+cd backend
+python -m venv .venv
+.venv/Scripts/pip install -r requirements.txt     # Linux/macOS : .venv/bin/pip
+cp .env.exemple .env                              # puis adapter
+.venv/Scripts/python manage.py migrate
+.venv/Scripts/python manage.py createsuperuser    # accès à /admin
+.venv/Scripts/python manage.py runserver 127.0.0.1:8000
+```
+
+Avec `OTP_FOURNISSEUR=console`, le code de connexion s'affiche dans le
+terminal du serveur. Les numéros de `OTP_NUMEROS_TEST` (par défaut
+690 00 00 01 et 690 00 00 02) acceptent toujours le code `123456`.
+
+### 2. L'app
+
+```bash
+flutter pub get
+flutter run --dart-define=API_URL=http://127.0.0.1:8000/api/
+```
+
+- **Téléphone branché en USB** : `adb reverse tcp:8000 tcp:8000`, puis
+  l'adresse par défaut (`http://127.0.0.1:8000/api/`) fonctionne.
+- **Émulateur Android** : `--dart-define=API_URL=http://10.0.2.2:8000/api/`.
+- **Production** : `--dart-define=API_URL=https://<votre-domaine>/api/`.
+  Android n'autorise le HTTP non chiffré que vers 127.0.0.1, localhost et
+  10.0.2.2 (`android/app/src/main/res/xml/network_security_config.xml`) :
+  partout ailleurs, HTTPS est obligatoire.
+
+APK de diffusion (un fichier par processeur, plus léger) :
+
+```bash
+flutter build apk --release --split-per-abi --dart-define=API_URL=https://<votre-domaine>/api/
+```
+
+Aucune clé n'est embarquée dans l'app : Twilio, Groq et Firebase ne sont
+configurés que sur le serveur (`backend/.env`).
+
+## Mise en production du serveur
+
+```bash
+cd backend
+docker build -t wanda-backend .
+docker run --env-file .env -p 8000:8000 -v wanda-media:/app/media wanda-backend
+```
+
+Dans `.env` de production : `DJANGO_DEBUG=0`, une `DJANGO_SECRET_KEY`
+longue et unique, `DJANGO_ALLOWED_HOSTS=<votre-domaine>`, `DATABASE_URL`
+(PostgreSQL), `OTP_FOURNISSEUR=twilio` et les clés Twilio, **sans**
+`OTP_NUMEROS_TEST`. Mettre un proxy HTTPS (Caddy, Nginx…) devant le
+conteneur ; le serveur force HTTPS et HSTS (`DJANGO_SSL_REDIRECT`,
+`DJANGO_HSTS_SECONDS`). Le volume `wanda-media` garde les photos.
+
+### Reprendre les données de Supabase
+
+```bash
+.venv/Scripts/python manage.py importer_supabase --base "<URL PostgreSQL Supabase>"
+# --fichiers copie aussi les photos (SUPABASE_URL et SUPABASE_SERVICE_ROLE_KEY requis)
+```
+
+### Modifier les tarifs
+
+Depuis l'administration (`/admin`, section Tarification). L'app relit les
+tarifs à chaque réservation ; le serveur recalcule toujours le prix lui-même.
+
+## Historique Supabase
+
+Les sections suivantes décrivent l'ancien back-end Supabase. Elles ne
+servent plus qu'à comprendre les données importées.
+
+### Migrations SQL (ancien back-end)
 
 Dans le Dashboard Supabase > SQL Editor, exécuter dans l'ordre :
 
@@ -73,7 +147,7 @@ Dans le Dashboard Supabase > SQL Editor, exécuter dans l'ordre :
    uniquement par numéro + code WhatsApp : rattache les anciens comptes à
    mot de passe à leur numéro (étape de vérification avant mise à jour).
 
-### Services ménagers (à exécuter dans cet ordre, après 001 à 007)
+#### Services ménagers (à exécuter dans cet ordre, après 001 à 007)
 
 8. `supabase/sql/008_services_menagers.sql` — retire les anciens métiers
    (`service_propose`), ajoute `particuliers.services` (plusieurs services
@@ -124,7 +198,7 @@ Dans le Dashboard Supabase > SQL Editor, exécuter dans l'ordre :
 
 Les scripts 008 et suivants sont relançables.
 
-### Tester les migrations sans toucher à la base
+#### Tester les migrations sans toucher à la base
 
 `bash supabase/tests/lancer.sh` (Docker démarré) rejoue 005 → 015 sur un
 PostgreSQL 15 jetable qui reproduit le schéma Supabase utile
@@ -133,7 +207,7 @@ puis joue un scénario complet en tant qu'utilisateurs connectés : fraudes au
 prix refusées, prix serveur, refus, ajustement, passages, aucun accès pour
 un tiers (`supabase/tests/20_scenario_services.sql`).
 
-### Modifier les tarifs (administrateur)
+#### Modifier les tarifs (ancien back-end)
 
 ```sql
 -- Voir tous les paramètres
@@ -150,13 +224,13 @@ centaine supérieure. Si une règle de calcul change (et pas seulement une
 valeur), modifier à la fois `calculer_prix` (009) et
 `lib/data/pricing/tarification.dart`, puis les cas de test des deux côtés.
 
-## Edge Functions (Supabase CLI)
+### Edge Functions (ancien back-end)
 
 Les deux fonctions IA lisent la clé `GROQ_API_KEY` et le modèle de vision
 `GROQ_VISION_MODEL` (par défaut `qwen/qwen3.8-27b` ; `llama-4-scout` a été
 arrêté par Groq le 17/07/2026) dans les secrets Supabase.
 
-### `analyze-demande-menage` — vérification des photos d'une demande
+#### `analyze-demande-menage` — vérification des photos d'une demande
 
 Vérifie que les photos correspondent au service, estime l'état / le volume /
 l'infestation et le compare au questionnaire. Lit uniquement le bucket privé
@@ -168,7 +242,7 @@ réservation (en cas d'échec : prix sur le questionnaire seul).
 supabase functions deploy analyze-demande-menage
 ```
 
-### `analyze-signalement` — analyse IA (Groq), clé jamais côté client
+#### `analyze-signalement` — analyse IA (Groq), clé jamais côté client
 
 C'était la faille de sécurité la plus importante trouvée à l'audit : la clé
 Groq était auparavant embarquée dans l'app mobile (récupérable par
@@ -182,7 +256,7 @@ supabase secrets set GROQ_VISION_MODEL=qwen/qwen3.8-27b   # facultatif
 supabase functions deploy analyze-signalement
 ```
 
-### `send-push-notification` — envoi FCM
+#### `send-push-notification` — envoi FCM
 
 ```bash
 supabase secrets set FIREBASE_SERVICE_ACCOUNT="$(cat service-account.json)"
@@ -209,7 +283,10 @@ casser le build en attendant. Trois étapes pour l'activer :
    `WidgetsFlutterBinding.ensureInitialized();`.
 
 L'enregistrement du token par utilisateur (`registerDeviceForUser`) est déjà
-branché après connexion citoyen/prestataire — rien d'autre à faire côté code.
+branché après connexion citoyen/prestataire (`POST /api/moi/appareils`).
+Côté serveur, renseigner `FCM_COMPTE_SERVICE` dans `backend/.env` (chemin
+du fichier de compte de service Firebase, jamais commité) : sans lui, les
+notifications sont seulement enregistrées en base.
 
 ## Sécurité — actions manuelles restantes
 
@@ -239,15 +316,25 @@ branché après connexion citoyen/prestataire — rien d'autre à faire côté c
   forfaits payants affichent « bientôt disponible ». À ne pas confondre avec
   la formule « abonnement » d'une demande de service (hebdomadaire ou
   mensuelle), qui ne concerne que la fréquence des passages.
-- Icônes d'application et assets stores, pages légales (CGU / politique de
-  confidentialité) — à prévoir avant soumission sur les stores.
+- Visuels des stores et pages légales (CGU / politique de
+  confidentialité) — à prévoir avant soumission sur les stores. L'icône de
+  l'app est le logo WANDA (`flutter_launcher_icons`, voir `pubspec.yaml`).
 
 ## Tests
 
 ```bash
 flutter analyze   # doit rester sans erreur
 flutter test
+cd backend && .venv/Scripts/python manage.py test
+```
+
+Parcours complet contre un serveur lancé en local (connexion du client et
+du prestataire, prix identique app/serveur, photo, réservation,
+acceptation, ajustement, fin, note) :
+
+```bash
+flutter test test_e2e --dart-define=E2E_API=http://127.0.0.1:8000/api/
 ```
 
 Le calcul du prix est couvert par `test/data/pricing/tarification_test.dart`
-(cas partagés avec le contrôle SQL de la migration 009).
+(cas partagés avec le calcul du serveur, `backend/tarification`).
