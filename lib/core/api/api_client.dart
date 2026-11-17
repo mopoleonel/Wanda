@@ -68,8 +68,11 @@ class ApiClient {
       _envoyer('POST', chemin, corps: corps, authentifie: false);
 
   Uri _uri(String chemin, [Map<String, String>? query]) {
-    final uri = _base.resolve(chemin.startsWith('/') ? chemin.substring(1) : chemin);
-    return query == null || query.isEmpty ? uri : uri.replace(queryParameters: query);
+    final uri =
+        _base.resolve(chemin.startsWith('/') ? chemin.substring(1) : chemin);
+    return query == null || query.isEmpty
+        ? uri
+        : uri.replace(queryParameters: query);
   }
 
   Future<http.BaseRequest> _requete(
@@ -84,7 +87,8 @@ class ApiClient {
     final uri = _uri(chemin, query);
     final http.BaseRequest r;
     if (fichiers != null) {
-      final m = http.MultipartRequest(methode, uri)..fields.addAll(champs ?? const {});
+      final m = http.MultipartRequest(methode, uri)
+        ..fields.addAll(champs ?? const {});
       for (final e in fichiers.entries) {
         m.files.add(await http.MultipartFile.fromPath(e.key, e.value.path));
       }
@@ -99,7 +103,9 @@ class ApiClient {
     }
     r.headers['Accept'] = 'application/json';
     final s = session.courante;
-    if (authentifie && s != null) r.headers['Authorization'] = 'Bearer ${s.acces}';
+    if (authentifie && s != null) {
+      r.headers['Authorization'] = 'Bearer ${s.acces}';
+    }
     return r;
   }
 
@@ -147,13 +153,18 @@ class ApiClient {
                   headers: {'Content-Type': 'application/json'},
                   body: jsonEncode({'refresh': s.rafraichissement}))
               .timeout(delai);
-          if (r.statusCode != 200) {
-            // Session expirée ou révoquée : il faut se reconnecter.
+          if (r.statusCode == 401 || r.statusCode == 400) {
+            // Jeton refusé (expiré ou révoqué) : il faut se reconnecter.
             await session.fermer();
             return false;
           }
-          final d = jsonDecode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
-          await session.majJetons(d['access'] as String, d['refresh'] as String?);
+          // Panne passagère du serveur (5xx, 429…) : on garde la session,
+          // l'utilisateur reste connecté et la prochaine requête réessaiera.
+          if (r.statusCode != 200) return false;
+          final d =
+              jsonDecode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+          await session.majJetons(
+              d['access'] as String, d['refresh'] as String?);
           return true;
         } finally {
           _renouvellement = null;
@@ -176,7 +187,8 @@ class ApiClient {
         ? corps['message'] as String
         : _messageParDefaut(r.statusCode);
     throw ApiException(message,
-        code: code.isEmpty ? 'HTTP_${r.statusCode}' : code, statut: r.statusCode);
+        code: code.isEmpty ? 'HTTP_${r.statusCode}' : code,
+        statut: r.statusCode);
   }
 
   static String _messageParDefaut(int statut) => switch (statut) {

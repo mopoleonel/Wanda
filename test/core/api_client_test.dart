@@ -80,6 +80,19 @@ void main() {
       expect(session.courante, isNull);
     });
 
+    test('serveur en panne au renouvellement : on reste connecté', () async {
+      final api = ApiClient(
+        baseUrl: 'https://api.test/api/',
+        session: session,
+        client: MockClient((r) async => r.url.path.endsWith('auth/rafraichir')
+            ? http.Response('<html>502</html>', 502)
+            : _json({'code': 'NON_CONNECTE'}, 401)),
+      );
+      await expectLater(api.get('moi'), throwsA(isA<ApiException>()));
+      expect(session.courante, isNotNull);
+      expect(session.courante!.rafraichissement, 'r1');
+    });
+
     test('refus métier : code et message du serveur', () async {
       final api = ApiClient(
         baseUrl: 'https://api.test/api/',

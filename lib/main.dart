@@ -6,6 +6,7 @@ import 'core/api/session.dart';
 import 'core/notifications/push_notification_service.dart';
 import 'core/providers/repository_providers.dart';
 import 'core/router/app_router.dart';
+import 'core/router/app_routes.dart';
 import 'core/theme/app_theme.dart';
 
 Future<void> main() async {
@@ -33,9 +34,27 @@ Future<void> main() async {
 class MyApp extends ConsumerWidget {
   const MyApp({super.key});
 
+  /// Espaces réservés à un compte connecté.
+  static const _espacesConnectes = [
+    AppRoutes.citoyenServices,
+    AppRoutes.citoyenDemande,
+    AppRoutes.citoyenSignal,
+    AppRoutes.dashboardParticulier,
+    AppRoutes.dashboardEntreprise,
+    AppRoutes.identityVerification,
+  ];
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final router = ref.watch(goRouterProvider);
+    // Session fermée (déconnexion, ou jeton vraiment expiré après des
+    // semaines sans ouvrir l'app) alors qu'on est dans un espace connecté :
+    // retour à l'accueil plutôt que des erreurs en série.
+    ref.listen(sessionChangesProvider, (_, suivant) {
+      if (suivant.valueOrNull != null || !suivant.hasValue) return;
+      final chemin = router.routerDelegate.currentConfiguration.uri.path;
+      if (_espacesConnectes.any(chemin.startsWith)) router.go(AppRoutes.home);
+    });
     return MaterialApp.router(
       debugShowCheckedModeBanner: false,
       title: 'WANDA',

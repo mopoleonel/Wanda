@@ -2,21 +2,37 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/api/session.dart';
+import '../../core/providers/repository_providers.dart';
 import '../../core/router/app_routes.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/bordereau.dart';
 
+/// Où ouvrir l'app au lancement : l'espace du compte resté connecté, sinon
+/// l'accueil. Lu dans la session gardée sur le téléphone : marche aussi sans
+/// réseau. On ne sort d'un compte qu'en touchant « Se déconnecter ».
+String destinationAuLancement(Session? session) =>
+    switch (session?.typeCompte) {
+      'citoyen' => AppRoutes.citoyenServices,
+      'particulier' => AppRoutes.dashboardParticulier,
+      'entreprise' => AppRoutes.dashboardEntreprise,
+      // Pas de session, ou inscription prestataire pas finie (type pas
+      // encore choisi) : l'accueil.
+      _ => AppRoutes.home,
+    };
+
 /// Écran de lancement : la bande verte officielle, le logo, le slogan.
-class SplashScreen extends StatefulWidget {
+class SplashScreen extends ConsumerStatefulWidget {
   const SplashScreen({super.key});
 
   @override
-  State<SplashScreen> createState() => _SplashScreenState();
+  ConsumerState<SplashScreen> createState() => _SplashScreenState();
 }
 
-class _SplashScreenState extends State<SplashScreen>
+class _SplashScreenState extends ConsumerState<SplashScreen>
     with SingleTickerProviderStateMixin {
   static const _duration = Duration(milliseconds: 2200);
 
@@ -32,8 +48,14 @@ class _SplashScreenState extends State<SplashScreen>
   void initState() {
     super.initState();
     _controller.forward();
-    _timer = Timer(_duration, () {
-      if (mounted) context.go(AppRoutes.home);
+    // Compte déjà connecté : lancement plus court, on va droit à l'espace.
+    final session = ref.read(gestionSessionProvider).courante;
+    final destination = destinationAuLancement(session);
+    _timer = Timer(
+        destination == AppRoutes.home
+            ? _duration
+            : const Duration(milliseconds: 900), () {
+      if (mounted) context.go(destination);
     });
   }
 

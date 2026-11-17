@@ -22,7 +22,8 @@ class Session {
     required this.typeCompte,
   });
 
-  Session copyWith({String? acces, String? rafraichissement, String? typeCompte}) =>
+  Session copyWith(
+          {String? acces, String? rafraichissement, String? typeCompte}) =>
       Session(
         acces: acces ?? this.acces,
         rafraichissement: rafraichissement ?? this.rafraichissement,
@@ -72,7 +73,8 @@ class StockageSessionSecurise implements StockageSession {
     final tout = await _stockage.readAll();
     return {
       for (final e in tout.entries)
-        if (e.key.startsWith(_prefixe)) e.key.substring(_prefixe.length): e.value,
+        if (e.key.startsWith(_prefixe))
+          e.key.substring(_prefixe.length): e.value,
     };
   }
 
