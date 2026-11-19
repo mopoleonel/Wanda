@@ -3,8 +3,17 @@
 # Réglages et secrets : fichier .env de ce dossier (créé par installer.sh).
 name: wanda
 
+# Journaux Docker limités (3 x 10 Mo par service) : le disque ne se remplit pas.
+x-journaux: &journaux
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
 services:
   base:
+    <<: *journaux
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
@@ -21,6 +30,7 @@ services:
     # Aucun port publié : la base n'est joignable que par l'API.
 
   api:
+    <<: *journaux
     build: ..
     restart: unless-stopped
     env_file: .env
@@ -38,6 +48,7 @@ services:
         condition: service_healthy
 
   caddy:
+    <<: *journaux
     image: caddy:2-alpine
     restart: unless-stopped
     ports:
