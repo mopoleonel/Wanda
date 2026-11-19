@@ -1,0 +1,15 @@
+# Certificat HTTPS obtenu et renouvelé automatiquement (Let's Encrypt).
+{$DOMAINE} {
+	encode zstd gzip
+	# Photos : 5 Mo chacune côté API, plusieurs par envoi.
+	request_body {
+		max_size 25MB
+	}
+	header {
+		-Server
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "same-origin"
+	}
+	reverse_proxy api:8000
+}

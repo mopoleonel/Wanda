@@ -1,0 +1,60 @@
+# WANDA en production sur un VPS : base PostgreSQL, API Django, Caddy (HTTPS).
+#   cd /opt/wanda/backend/deploiement && docker compose up -d --build
+# Réglages et secrets : fichier .env de ce dossier (créé par installer.sh).
+name: wanda
+
+services:
+  base:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: wanda
+      POSTGRES_USER: wanda
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?mot de passe de la base manquant}
+    volumes:
+      - base:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wanda -d wanda"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    # Aucun port publié : la base n'est joignable que par l'API.
+
+  api:
+    build: ..
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://wanda:${POSTGRES_PASSWORD}@base:5432/wanda
+      WANDA_MEDIA_ROOT: /app/media
+      WANDA_CACHE: base
+      WANDA_NB_PROXYS: "1"
+      # Caddy redirige déjà vers HTTPS.
+      DJANGO_SSL_REDIRECT: "0"
+    volumes:
+      - photos:/app/media
+    depends_on:
+      base:
+        condition: service_healthy
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      DOMAINE: ${DOMAINE:?domaine manquant}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_donnees:/data
+      - caddy_config:/config
+    depends_on:
+      - api
+
+volumes:
+  base:
+  photos:
+  caddy_donnees:
+  caddy_config:

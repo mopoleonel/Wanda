@@ -39,6 +39,9 @@ if not SECRET_KEY:
     SECRET_KEY = "developpement-seulement-ne-pas-utiliser-en-production"
 
 ALLOWED_HOSTS = _liste("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1")
+# Origines HTTPS autorisées pour les formulaires (administration), ex.
+# https://api.wanda.cm
+CSRF_TRUSTED_ORIGINS = _liste("DJANGO_CSRF_TRUSTED_ORIGINS")
 
 INSTALLED_APPS = [
     "django.contrib.admin",
@@ -122,6 +125,17 @@ LIEN_PHOTO_DUREE = 600  # secondes
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
+# Compteurs des limites anti-abus. En production (WANDA_CACHE=base) ils sont
+# dans la base, donc communs à tous les processus du serveur ; en mémoire,
+# chaque processus aurait les siens.
+if os.environ.get("WANDA_CACHE") == "base":
+    CACHES = {
+        "default": {
+            "BACKEND": "django.core.cache.backends.db.DatabaseCache",
+            "LOCATION": "wanda_cache",
+        }
+    }
+
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
         "rest_framework_simplejwt.authentication.JWTAuthentication",
@@ -132,6 +146,10 @@ REST_FRAMEWORK = {
     "EXCEPTION_HANDLER": "noyau.erreurs.gestionnaire_erreurs",
     # Codes de connexion : par numéro (voir comptes/limites.py) et, plus
     # largement, par adresse IP.
+    # Derrière un proxy (Caddy en production : 1), l'adresse du client est
+    # lue dans X-Forwarded-For ; sinon toutes les requêtes sembleraient
+    # venir du proxy et partageraient la même limite.
+    "NUM_PROXIES": int(os.environ.get("WANDA_NB_PROXYS", "0")) or None,
     "DEFAULT_THROTTLE_RATES": {
         "otp_numero": "5/hour",
         "otp_verif_numero": "15/hour",
