@@ -86,17 +86,20 @@ def _envoyer_twilio(telephone, code):
     if not (sid and jeton and settings.TWILIO_WHATSAPP_FROM):
         journal.error("Twilio n'est pas configuré : code non envoyé à %s", telephone)
         raise ErreurMetier("ENVOI_CODE_IMPOSSIBLE", status_code=503)
-    corps = urllib.parse.urlencode(
-        {
-            "From": settings.TWILIO_WHATSAPP_FROM,
-            "To": "whatsapp:" + telephone,
-            "Body": "Votre code WANDA : {}. Il expire dans 5 minutes. "
-            "Ne le communiquez à personne.".format(code),
-        }
-    ).encode()
+    champs = {"From": settings.TWILIO_WHATSAPP_FROM, "To": "whatsapp:" + telephone}
+    if settings.TWILIO_CONTENT_SID:
+        # Production : modèle approuvé par Meta, le code dans la variable 1.
+        champs["ContentSid"] = settings.TWILIO_CONTENT_SID
+        champs["ContentVariables"] = json.dumps({"1": code})
+    else:
+        # Bac à sable Twilio : texte libre (le testeur a rejoint le bac à sable).
+        champs["Body"] = (
+            "Votre code WANDA : {}. Il expire dans 5 minutes. "
+            "Ne le communiquez à personne.".format(code)
+        )
     requete = urllib.request.Request(
         "https://api.twilio.com/2010-04-01/Accounts/{}/Messages.json".format(sid),
-        data=corps,
+        data=urllib.parse.urlencode(champs).encode(),
         headers={
             "Authorization": "Basic "
             + base64.b64encode("{}:{}".format(sid, jeton).encode()).decode(),
@@ -105,7 +108,20 @@ def _envoyer_twilio(telephone, code):
     )
     try:
         with urllib.request.urlopen(requete, timeout=15) as reponse:
-            json.loads(reponse.read() or b"{}")
+            message = json.loads(reponse.read() or b"{}")
+        journal.info("Code envoyé par WhatsApp à %s (message %s)", telephone, message.get("sid"))
+    except urllib.error.HTTPError as exc:
+        # Twilio explique le refus (numéro invalide, modèle inconnu…) : on le
+        # garde dans le journal, jamais le code lui-même.
+        try:
+            detail = json.loads(exc.read() or b"{}")
+        except ValueError:
+            detail = {}
+        journal.error(
+            "Twilio a refusé l'envoi à %s : HTTP %s, erreur %s : %s",
+            telephone, exc.code, detail.get("code"), detail.get("message"),
+        )
+        raise ErreurMetier("ENVOI_CODE_IMPOSSIBLE", status_code=503)
     except (urllib.error.URLError, ValueError) as exc:
         journal.error("Échec de l'envoi Twilio à %s : %s", telephone, exc)
         raise ErreurMetier("ENVOI_CODE_IMPOSSIBLE", status_code=503)

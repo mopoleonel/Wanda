@@ -177,6 +177,10 @@ OTP_ESSAIS_MAX = 5
 TWILIO_ACCOUNT_SID = os.environ.get("TWILIO_ACCOUNT_SID", "")
 TWILIO_AUTH_TOKEN = os.environ.get("TWILIO_AUTH_TOKEN", "")
 TWILIO_WHATSAPP_FROM = os.environ.get("TWILIO_WHATSAPP_FROM", "")
+# Modèle WhatsApp approuvé par Meta (catégorie « Authentification »), dont la
+# variable {{1}} reçoit le code. Obligatoire en production : WhatsApp refuse
+# un message libre envoyé en premier. Vide : texte libre (bac à sable Twilio).
+TWILIO_CONTENT_SID = os.environ.get("TWILIO_CONTENT_SID", "")
 
 FCM_COMPTE_SERVICE = os.environ.get("FCM_COMPTE_SERVICE", "")
 

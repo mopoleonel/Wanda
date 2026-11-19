@@ -1,3 +1,7 @@
+import io
+import json
+import urllib.error
+import urllib.parse
 from datetime import timedelta
 from unittest import mock
 
@@ -119,6 +123,33 @@ class ConnexionParCode(TestCase):
         requete = envoi.call_args[0][0]
         self.assertIn("/Accounts/AC1/Messages.json", requete.full_url)
         self.assertIn(b"whatsapp%3A%2B237699111222", requete.data)
+
+
+    @override_settings(OTP_NUMEROS_TEST={}, OTP_FOURNISSEUR="twilio", TWILIO_ACCOUNT_SID="AC1",
+                       TWILIO_AUTH_TOKEN="t", TWILIO_WHATSAPP_FROM="whatsapp:+1415",
+                       TWILIO_CONTENT_SID="HX123")
+    def test_envoi_par_modele_whatsapp_approuve(self):
+        reponse = mock.MagicMock()
+        reponse.__enter__.return_value.read.return_value = b'{"sid": "SM1"}'
+        with mock.patch("urllib.request.urlopen", return_value=reponse) as envoi:
+            r = self.client.post("/api/auth/code", {"telephone": "699111222"}, format="json")
+        self.assertEqual(r.status_code, 200)
+        champs = dict(urllib.parse.parse_qsl(envoi.call_args[0][0].data.decode()))
+        self.assertEqual(champs["ContentSid"], "HX123")
+        self.assertEqual(len(json.loads(champs["ContentVariables"])["1"]), 6)
+        self.assertNotIn("Body", champs)
+
+    @override_settings(OTP_NUMEROS_TEST={}, OTP_FOURNISSEUR="twilio", TWILIO_ACCOUNT_SID="AC1",
+                       TWILIO_AUTH_TOKEN="t", TWILIO_WHATSAPP_FROM="whatsapp:+1415")
+    def test_refus_twilio_explique_dans_le_journal_sans_le_code(self):
+        refus = urllib.error.HTTPError(
+            "https://api.twilio.com", 400, "Bad Request", {},
+            io.BytesIO(b'{"code": 63007, "message": "Sender not found"}'))
+        with mock.patch("urllib.request.urlopen", side_effect=refus),                 self.assertLogs("wanda.otp", "ERROR") as journal:
+            r = self.client.post("/api/auth/code", {"telephone": "699111222"}, format="json")
+        self.assertEqual(r.status_code, 503)
+        self.assertIn("63007", journal.output[0])
+        self.assertIn("Sender not found", journal.output[0])
 
 
 class ProfilPrestataire(EssaiAvecFichiers):
