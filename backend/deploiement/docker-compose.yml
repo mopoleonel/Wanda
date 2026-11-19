@@ -59,6 +59,7 @@ services:
       DOMAINE: ${DOMAINE:?domaine manquant}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./site:/srv/site:ro
       - caddy_donnees:/data
       - caddy_config:/config
     depends_on:

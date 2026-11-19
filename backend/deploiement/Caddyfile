@@ -13,5 +13,20 @@
 	}
 	# Journal des requêtes (sortie Docker, taille limitée).
 	log
-	reverse_proxy api:8000
+
+	# L'API et l'administration : Django.
+	@django path /api/* /admin /admin/* /static/*
+	handle @django {
+		reverse_proxy api:8000
+	}
+
+	# Tout le reste : le site de présentation (fichiers statiques).
+	handle {
+		root * /srv/site
+		try_files {path} {path}.html {path}/index.html
+		header Content-Security-Policy "default-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; frame-ancestors 'none'; base-uri 'self'; form-action 'none'"
+		header X-Frame-Options "DENY"
+		header /img/* Cache-Control "public, max-age=604800"
+		file_server
+	}
 }
