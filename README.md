@@ -69,7 +69,7 @@ flutter run --dart-define=API_URL=http://127.0.0.1:8000/api/
 - **Téléphone branché en USB** : `adb reverse tcp:8000 tcp:8000`, puis
   l'adresse par défaut (`http://127.0.0.1:8000/api/`) fonctionne.
 - **Émulateur Android** : `--dart-define=API_URL=http://10.0.2.2:8000/api/`.
-- **Production** : `--dart-define=API_URL=https://89-167-100-113.sslip.io/api/`.
+- **Production** : `--dart-define=API_URL=https://wanda237.work/api/`.
   Android n'autorise le HTTP non chiffré que vers 127.0.0.1, localhost et
   10.0.2.2 (`android/app/src/main/res/xml/network_security_config.xml`) :
   partout ailleurs, HTTPS est obligatoire.
@@ -77,7 +77,7 @@ flutter run --dart-define=API_URL=http://127.0.0.1:8000/api/
 APK de diffusion (un fichier par processeur, plus léger) :
 
 ```bash
-flutter build apk --release --split-per-abi --dart-define=API_URL=https://89-167-100-113.sslip.io/api/
+flutter build apk --release --split-per-abi --dart-define=API_URL=https://wanda237.work/api/
 ```
 
 Aucune clé n'est embarquée dans l'app : Twilio, Groq et Firebase ne sont
@@ -85,9 +85,15 @@ configurés que sur le serveur (`backend/.env`).
 
 ## Mise en production du serveur
 
-Serveur actuel : VPS Hetzner (Ubuntu 24.04, ARM), API sur
-**https://89-167-100-113.sslip.io/api/** (adresse automatique, certificat
-Let's Encrypt renouvelé tout seul).
+Serveur actuel : VPS Hetzner (Ubuntu 24.04, ARM). Domaine **wanda237.work**
+(Porkbun, jusqu'au 19/11/2027) : site de présentation sur
+https://wanda237.work/ (pages `confidentialite` et `conditions`), API sur
+**https://wanda237.work/api/**, administration sur `/admin/`. Certificats
+Let's Encrypt renouvelés tout seuls ; `www.` redirige vers le domaine.
+L'ancienne adresse https://89-167-100-113.sslip.io reste servie pour les
+toutes premières versions de l'app (`DOMAINES_SECONDAIRES` dans `.env`).
+Le site est dans `backend/deploiement/site/` (fichiers servis par Caddy :
+une mise à jour du serveur suffit, sans redémarrage).
 
 Tout est dans `backend/deploiement/` : PostgreSQL, l'API, Caddy (HTTPS) dans
 Docker, pare-feu (SSH, 80, 443 seulement), sauvegarde chaque nuit à 3 h de la

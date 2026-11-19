@@ -147,6 +147,43 @@ void main() {
     });
   });
 
+  group('Session : jamais perdue sur une erreur passagère', () {
+    test('lecture en échec puis réussie : la session est retrouvée', () async {
+      final stockage = _StockageCapricieux(echecs: 2);
+      await stockage.ecrire(_session.versCarte());
+      final g = GestionSession(stockage);
+      await g.charger(pause: Duration.zero);
+      expect(g.courante!.userId, 'u1');
+    });
+
+    test("lecture toujours en échec : rien n'est effacé", () async {
+      final stockage = _StockageCapricieux(echecs: 99);
+      await stockage.ecrire(_session.versCarte());
+      final g = GestionSession(stockage);
+      await g.charger(pause: Duration.zero);
+      expect(g.courante, isNull);
+      expect(stockage.effacements, 0);
+      // Au lancement suivant (stockage rétabli), la session revient.
+      stockage.echecs = 0;
+      await g.charger(pause: Duration.zero);
+      expect(g.courante!.userId, 'u1');
+    });
+
+    test('écritures simultanées : la dernière gagne', () async {
+      final stockage = StockageSessionMemoire();
+      final g = GestionSession(stockage);
+      await g.ouvrir(_session);
+      await Future.wait([
+        g.majJetons('a2', 'r2'),
+        g.majType('particulier'),
+      ]);
+      final relue = GestionSession(stockage);
+      await relue.charger();
+      expect(relue.courante!.acces, 'a2');
+      expect(relue.courante!.typeCompte, 'particulier');
+    });
+  });
+
   group('Adaptateurs', () {
     test('demande Django -> Sollicitation', () {
       final s = Sollicitation.fromMap(versSollicitation({
@@ -243,4 +280,27 @@ void main() {
       expect(recu, ['ok']);
     });
   });
+}
+
+/// Stockage dont les [echecs] premières lectures échouent (coffre de clés
+/// momentanément indisponible).
+class _StockageCapricieux extends StockageSessionMemoire {
+  int echecs;
+  int effacements = 0;
+  _StockageCapricieux({required this.echecs});
+
+  @override
+  Future<Map<String, String>> lire() async {
+    if (echecs > 0) {
+      echecs--;
+      throw Exception('Keystore indisponible');
+    }
+    return super.lire();
+  }
+
+  @override
+  Future<void> effacer() async {
+    effacements++;
+    await super.effacer();
+  }
 }

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
@@ -62,33 +63,57 @@ abstract class StockageSession {
 
 /// Stockage chiffré du téléphone (Keystore Android, trousseau iOS) : les
 /// jetons ne sont jamais écrits en clair.
+///
+/// La session tient dans UNE clé (écriture d'un bloc, jamais à moitié). Les
+/// sessions enregistrées par les versions 1.1.x (une clé par champ) sont
+/// relues puis réécrites au nouveau format.
 class StockageSessionSecurise implements StockageSession {
-  static const _prefixe = 'wanda.session.';
+  static const _cle = 'wanda.session';
+  static const _prefixeAncien = 'wanda.session.';
+
+  /// `resetOnError: false` : par défaut, la bibliothèque EFFACE tout le
+  /// stockage à la moindre erreur de déchiffrement ou d'accès au coffre de
+  /// clés (même passagère, ex. téléphone verrouillé) ; l'utilisateur était
+  /// alors déconnecté sans raison.
+  static const _options = AndroidOptions(resetOnError: false);
+
   final FlutterSecureStorage _stockage;
   StockageSessionSecurise([FlutterSecureStorage? stockage])
-      : _stockage = stockage ?? const FlutterSecureStorage();
+      : _stockage = stockage ?? const FlutterSecureStorage(aOptions: _options);
 
   @override
   Future<Map<String, String>> lire() async {
     final tout = await _stockage.readAll();
+    final bloc = tout[_cle];
+    if (bloc != null) {
+      final m = jsonDecode(bloc) as Map<String, dynamic>;
+      return {for (final e in m.entries) e.key: '${e.value}'};
+    }
     return {
       for (final e in tout.entries)
-        if (e.key.startsWith(_prefixe))
-          e.key.substring(_prefixe.length): e.value,
+        if (e.key.startsWith(_prefixeAncien))
+          e.key.substring(_prefixeAncien.length): e.value,
     };
   }
 
   @override
   Future<void> ecrire(Map<String, String> valeurs) async {
-    for (final e in valeurs.entries) {
-      await _stockage.write(key: _prefixe + e.key, value: e.value);
-    }
+    await _stockage.write(key: _cle, value: jsonEncode(valeurs));
+    await _effacerAncienFormat();
   }
 
   @override
   Future<void> effacer() async {
-    for (final cle in (await lire()).keys) {
-      await _stockage.delete(key: _prefixe + cle);
+    await _stockage.delete(key: _cle);
+    await _effacerAncienFormat();
+  }
+
+  Future<void> _effacerAncienFormat() async {
+    final cles = (await _stockage.readAll())
+        .keys
+        .where((k) => k.startsWith(_prefixeAncien));
+    for (final cle in cles) {
+      await _stockage.delete(key: cle);
     }
   }
 }
@@ -115,24 +140,41 @@ class GestionSession {
   Session? _courante;
   final _changements = StreamController<Session?>.broadcast();
 
+  /// Les écritures passent l'une après l'autre (renouvellement du jeton et
+  /// mise à jour du type peuvent arriver en même temps).
+  Future<void> _file = Future.value();
+  Future<void> _enFile(Future<void> Function() action) {
+    final suite = _file.then((_) => action());
+    _file = suite.catchError((_) {});
+    return suite;
+  }
+
   Session? get courante => _courante;
   Stream<Session?> get changements => _changements.stream;
 
-  /// Au démarrage : reprend la session du dernier lancement. Un stockage
-  /// illisible (restauration de sauvegarde, clé perdue) vaut déconnexion.
-  Future<void> charger() async {
-    try {
-      _courante = Session.depuisCarte(await _stockage.lire());
-    } catch (_) {
-      _courante = null;
-      await _stockage.effacer().catchError((_) {});
+  /// Au démarrage : reprend la session du dernier lancement. Une lecture
+  /// qui échoue (coffre de clés momentanément indisponible) est retentée ;
+  /// si elle échoue encore, on démarre sans session mais SANS rien effacer :
+  /// la session sera retrouvée au lancement suivant.
+  Future<void> charger({
+    int essais = 3,
+    Duration pause = const Duration(milliseconds: 300),
+  }) async {
+    for (var i = 1; i <= essais; i++) {
+      try {
+        _courante = Session.depuisCarte(await _stockage.lire());
+        return;
+      } catch (_) {
+        if (i < essais) await Future<void>.delayed(pause);
+      }
     }
+    _courante = null;
   }
 
   Future<void> ouvrir(Session s) async {
     _courante = s;
-    await _stockage.ecrire(s.versCarte());
     _changements.add(s);
+    await _enFile(() => _stockage.ecrire(s.versCarte()));
   }
 
   Future<void> majJetons(String acces, String? rafraichissement) async {
@@ -147,9 +189,11 @@ class GestionSession {
     await ouvrir(s.copyWith(typeCompte: typeCompte));
   }
 
+  /// Déconnexion volontaire (ou jeton refusé par le serveur) : seul cas où
+  /// la session est effacée du téléphone.
   Future<void> fermer() async {
     _courante = null;
-    await _stockage.effacer();
     _changements.add(null);
+    await _enFile(_stockage.effacer);
   }
 }
