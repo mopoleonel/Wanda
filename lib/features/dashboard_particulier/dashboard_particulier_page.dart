@@ -58,6 +58,11 @@ class _DashboardParticulierPageState
   Particulier? particulier;
   bool isAvailable = false;
   bool isLoading = true;
+
+  /// Profil impossible à charger (réseau, serveur) : on l'affiche avec un
+  /// bouton « Réessayer » plutôt qu'un compte qui semble vide (« Abonnement
+  /// requis », aucun service…), trompeur pour le prestataire.
+  String? _erreurProfil;
   String statusMessage = "Vérification...";
   RatingSummary rating = RatingSummary.empty;
 
@@ -155,7 +160,15 @@ class _DashboardParticulierPageState
     try {
       final data =
           await ref.read(profileRepositoryProvider).fetchParticulier(_userId);
-      if (data == null) return;
+      if (data == null) {
+        if (mounted) {
+          setState(() {
+            isLoading = false;
+            _erreurProfil = 'Profil prestataire introuvable.';
+          });
+        }
+        return;
+      }
 
       String status;
       if (data.hasValidSubscription) {
@@ -205,13 +218,28 @@ class _DashboardParticulierPageState
           _phoneController.text = data.telephone;
           _editedServices = List.of(data.services);
           isLoading = false;
+          _erreurProfil = null;
         });
         _maybePromptCertification();
       }
     } on AppException catch (e) {
-      if (mounted) setState(() => isLoading = false);
-      _showSnackBar(e.message);
+      if (!mounted) return;
+      setState(() {
+        isLoading = false;
+        // Profil déjà affiché : on garde l'écran, un message suffit.
+        if (particulier == null) _erreurProfil = e.message;
+      });
+      if (particulier != null) _showSnackBar(e.message);
     }
+  }
+
+  void _reessayer() {
+    setState(() {
+      isLoading = true;
+      _erreurProfil = null;
+    });
+    _loadData();
+    _fetchSollicitations();
   }
 
   final _direct = <StreamSubscription<void>>[];
@@ -700,13 +728,17 @@ class _DashboardParticulierPageState
 
   @override
   Widget build(BuildContext context) {
+    final erreur = _erreurProfil;
     final body = isLoading
         ? const Center(child: CircularProgressIndicator())
-        : switch (_selectedIndex) {
-            1 => _buildMissionsView(),
-            2 => _buildProfilePage(),
-            _ => _buildHomeView(),
-          };
+        : erreur != null && particulier == null
+            ? SafeArea(
+                child: ErrorStateView(message: erreur, onRetry: _reessayer))
+            : switch (_selectedIndex) {
+                1 => _buildMissionsView(),
+                2 => _buildProfilePage(),
+                _ => _buildHomeView(),
+              };
     final topInset = MediaQuery.paddingOf(context).top;
     return Scaffold(
       body: Stack(children: [

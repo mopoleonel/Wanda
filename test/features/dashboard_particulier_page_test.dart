@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
+import 'package:wanda/core/error/app_exception.dart';
 import 'package:wanda/core/providers/repository_providers.dart';
 import 'package:wanda/core/router/app_routes.dart';
 import 'package:wanda/core/theme/app_theme.dart';
@@ -33,8 +34,17 @@ class _FakeProfiles extends Fake implements ProfileRepository {
   int updates = 0;
   List<String>? savedServices;
 
+  /// Nombre de chargements qui échouent (réseau coupé) avant de réussir.
+  int echecs = 0;
+
   @override
-  Future<Particulier?> fetchParticulier(String id) async => particulier;
+  Future<Particulier?> fetchParticulier(String id) async {
+    if (echecs > 0) {
+      echecs--;
+      throw const AppException('Pas de connexion internet.');
+    }
+    return particulier;
+  }
 
   @override
   Future<void> updateParticulierInfo({
@@ -194,6 +204,23 @@ void main() {
     tester.view.physicalSize = const Size(600, 2400);
     addTearDown(tester.view.reset);
   }
+
+  testWidgets(
+      "Sans réseau : message et « Réessayer », jamais un compte qui semble vide",
+      (tester) async {
+    tallScreen(tester);
+    final profils = _FakeProfiles(_artisan())..echecs = 1;
+    await tester.pumpWidget(_app(profils));
+    await _settle(tester);
+
+    expect(find.text('Pas de connexion internet.'), findsOneWidget);
+    expect(find.textContaining('Abonnement requis'), findsNothing);
+
+    await tester.tap(find.text('Réessayer'));
+    await _settle(tester);
+    expect(find.text('Pas de connexion internet.'), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+  });
 
   testWidgets('Arrivée, profil incomplet : rappel « compléter puis certifier »',
       (tester) async {
