@@ -11,5 +11,7 @@
 		X-Content-Type-Options "nosniff"
 		Referrer-Policy "same-origin"
 	}
+	# Journal des requêtes (sortie Docker, taille limitée).
+	log
 	reverse_proxy api:8000
 }
