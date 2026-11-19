@@ -69,7 +69,7 @@ flutter run --dart-define=API_URL=http://127.0.0.1:8000/api/
 - **Téléphone branché en USB** : `adb reverse tcp:8000 tcp:8000`, puis
   l'adresse par défaut (`http://127.0.0.1:8000/api/`) fonctionne.
 - **Émulateur Android** : `--dart-define=API_URL=http://10.0.2.2:8000/api/`.
-- **Production** : `--dart-define=API_URL=https://<votre-domaine>/api/`.
+- **Production** : `--dart-define=API_URL=https://89-167-100-113.sslip.io/api/`.
   Android n'autorise le HTTP non chiffré que vers 127.0.0.1, localhost et
   10.0.2.2 (`android/app/src/main/res/xml/network_security_config.xml`) :
   partout ailleurs, HTTPS est obligatoire.
@@ -77,7 +77,7 @@ flutter run --dart-define=API_URL=http://127.0.0.1:8000/api/
 APK de diffusion (un fichier par processeur, plus léger) :
 
 ```bash
-flutter build apk --release --split-per-abi --dart-define=API_URL=https://<votre-domaine>/api/
+flutter build apk --release --split-per-abi --dart-define=API_URL=https://89-167-100-113.sslip.io/api/
 ```
 
 Aucune clé n'est embarquée dans l'app : Twilio, Groq et Firebase ne sont
@@ -85,18 +85,40 @@ configurés que sur le serveur (`backend/.env`).
 
 ## Mise en production du serveur
 
+Serveur actuel : VPS Hetzner (Ubuntu 24.04, ARM), API sur
+**https://89-167-100-113.sslip.io/api/** (adresse automatique, certificat
+Let's Encrypt renouvelé tout seul).
+
+Tout est dans `backend/deploiement/` : PostgreSQL, l'API, Caddy (HTTPS) dans
+Docker, pare-feu (SSH, 80, 443 seulement), sauvegarde chaque nuit à 3 h de la
+base et des photos dans `/opt/wanda/sauvegardes` (14 jours gardés). Les
+secrets sont générés sur le serveur, dans `/opt/wanda/backend/deploiement/.env`
+(jamais sur GitHub).
+
+Mettre à jour le serveur après un changement du back-end (depuis le PC) :
+
 ```bash
-cd backend
-docker build -t wanda-backend .
-docker run --env-file .env -p 8000:8000 -v wanda-media:/app/media wanda-backend
+git archive --format=tar HEAD backend | ssh -i ~/.ssh/wanda_vps root@89.167.100.113   'tar xf - -C /opt/wanda && cd /opt/wanda/backend/deploiement && docker compose up -d --build'
 ```
 
-Dans `.env` de production : `DJANGO_DEBUG=0`, une `DJANGO_SECRET_KEY`
-longue et unique, `DJANGO_ALLOWED_HOSTS=<votre-domaine>`, `DATABASE_URL`
-(PostgreSQL), `OTP_FOURNISSEUR=twilio` et les clés Twilio, **sans**
-`OTP_NUMEROS_TEST`. Mettre un proxy HTTPS (Caddy, Nginx…) devant le
-conteneur ; le serveur force HTTPS et HSTS (`DJANGO_SSL_REDIRECT`,
-`DJANGO_HSTS_SECONDS`). Le volume `wanda-media` garde les photos.
+Commandes utiles sur le serveur (`ssh -i ~/.ssh/wanda_vps root@89.167.100.113`,
+puis `cd /opt/wanda/backend/deploiement`) :
+
+```bash
+docker compose ps                                  # état des services
+docker compose logs api --tail 50                  # journal de l'API (codes de connexion en mode console)
+docker compose exec api python manage.py createsuperuser   # compte d'administration (/admin)
+nano .env && docker compose up -d                  # changer un réglage (Twilio, Groq…)
+```
+
+Passer à un vrai domaine : créer un enregistrement DNS `A` vers
+89.167.100.113, remplacer `DOMAINE`, `DJANGO_ALLOWED_HOSTS` et
+`DJANGO_CSRF_TRUSTED_ORIGINS` dans `.env`, `docker compose up -d`, puis
+recompiler l'app avec la nouvelle adresse.
+
+**Avant l'ouverture au public** : configurer Twilio (`OTP_FOURNISSEUR=twilio`)
+et retirer `OTP_NUMEROS_TEST` du `.env` (sinon n'importe qui connaissant le
+code fixe entre dans les comptes de test).
 
 ### Reprendre les données de Supabase
 
