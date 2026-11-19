@@ -57,6 +57,8 @@ services:
       - "443:443/udp"
     environment:
       DOMAINE: ${DOMAINE:?domaine manquant}
+      # Avec la virgule en tête, ex. ", 1-2-3-4.sslip.io" (vide si aucun).
+      DOMAINES_SECONDAIRES: ${DOMAINES_SECONDAIRES:-}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - ./site:/srv/site:ro

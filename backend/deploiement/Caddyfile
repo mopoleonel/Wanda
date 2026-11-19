@@ -1,5 +1,14 @@
-# Certificat HTTPS obtenu et renouvelé automatiquement (Let's Encrypt).
-{$DOMAINE} {
+# Certificats HTTPS obtenus et renouvelés automatiquement (Let's Encrypt).
+# DOMAINE : adresse principale ; DOMAINES_SECONDAIRES : autres adresses
+# servant le même contenu (ex. l'ancienne adresse sslip.io des premières
+# versions de l'app).
+
+# www.<domaine> -> <domaine>
+www.{$DOMAINE} {
+	redir https://{$DOMAINE}{uri} permanent
+}
+
+{$DOMAINE}{$DOMAINES_SECONDAIRES} {
 	encode zstd gzip
 	# Photos : 5 Mo chacune côté API, plusieurs par envoi.
 	request_body {
